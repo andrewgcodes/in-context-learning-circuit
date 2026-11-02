@@ -6,7 +6,8 @@
 \usepackage[utf8]{inputenc}
 \usepackage[hidelinks]{hyperref}
 \usepackage{url,xurl}
-\usepackage{graphicx,booktabs,float,multirow}
+\usepackage{graphicx,booktabs,float,multirow,tabularx}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \usepackage{inconsolata}
 \usepackage{enumitem}
 \usepackage{microtype}
@@ -263,7 +264,7 @@ The algorithm also assembles in a fixed order during training. Across OLMo-2 che
 \begin{table}[t]\centering\small
 \caption{Each link of the account in three models. Forced: follows from the architecture and is expected in every model. Implementation: set by training and reported per model. Named: a small set of heads is necessary and sufficient. Population: no single head is necessary; the link is characterized by a direction with a size-matched random control. --: not run.}
 \label{tab:replication}
-\begin{tabular}{lllll}
+\begin{tabularx}{\linewidth}{Yllll}
 \toprule
 Link & Kind & Qwen3-4B & SmolLM3-3B & Llama-3.2-3B \\
 \midrule
@@ -281,7 +282,7 @@ Value transport & implementation & 3 groups & -- & -- \\
 Direct writer = late band & implementation & yes & yes & -- \\
 Order term sign flip 6 vs 12 & implementation & yes & yes (3 carriers) & -- \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 \begin{figure}[t]\centering
@@ -313,6 +314,7 @@ The null action deserves a last word. A model that reads a prompt memory needs a
 \section*{Reproducibility}
 Code, batteries, the per-prompt measurement hooks and the scripts that produce every figure and table are released at \url{https://github.com/andrewgcodes/in-context-learning-circuit}. All runs used single H100s with the HuggingFace implementations of the models in bfloat16.
 
+\raggedbottom
 \bibliographystyle{iclr2024_conference}
 \bibliography{refs}
 
@@ -325,7 +327,7 @@ Code, batteries, the per-prompt measurement hooks and the scripts that produce e
 Every number in the main text with its model, $n$ (prompts) and paired-bootstrap interval.
 \begin{table}[H]\centering\scriptsize
 \caption{Effects behind the main text (nats; paired against the intact run; 95\% bootstrap intervals).}\label{tab:claims}
-\begin{tabular}{llrl}
+\begin{tabularx}{\linewidth}{>{\hsize=.72\hsize}Y l r >{\hsize=1.28\hsize}Y}
 \toprule
 Claim & Model & $n$ & Effect [95\% CI] \\
 \midrule
@@ -362,7 +364,7 @@ Llama single-head census & Llama & 144 & max reader $-0.09$, max brake $+0.12$, 
 Census-ranked brake-24 / reader-20 joint knock, 12 demos & Llama & 144 & $+1.90$ [$+1.12,+2.67$] (random $+0.12$) / $-0.56$ [$-1.01,-0.12$] (random $0.00$) \\
 Census-ranked brake-24 / reader-20 joint knock, 6 demos & Llama & 432 & $+0.57$ [$+0.19,+0.93$] (random $+0.16$) / $-0.06$ [$-0.32,+0.21$] \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 \section{Encoder bound and assembly from parts}\label{app:encoder}
 The encoder bound is correlational: every axis that failed to bind (parity, third letter, letter set, digit rules) is one the model never represents linearly at the arrow at any layer, while language becomes linear by layer 8 and binds weakly through layers 10--20, and topic, sentiment and implied meaning become linear by layer 13 and bind through layers 21--29. Adding the gate to a non-binding prompt changes nothing. Assembly from parts: writing the task direction $u$ into the query-class slots at layer 16 and at the query of a parity prompt raises accuracy from 50\% to 71\% (question 38\%$\to$58\%, vowel 50\%$\to$71\%), with key-only, query-only and random directions within $\pm0.1$ and the wrong-class slots hurting; SmolLM3 reproduces this at a model-specific dose. The same-answer control: handoffs from a same-class same-length twin move the answer by at most 0.06 nats.
