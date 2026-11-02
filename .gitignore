@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+runs/
+*.log
+paper/arxiv/
+paper/arxiv.tar.gz
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.out
+paper/main.pdf
+figures/*.png

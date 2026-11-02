@@ -1,0 +1,438 @@
+\documentclass{article}
+\usepackage{iclr2024_conference_mod,times}
+\preprintcopy
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url,xurl}
+\usepackage{graphicx,booktabs,float,multirow}
+\usepackage{inconsolata}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage[capitalize]{cleveref}
+\usepackage[compact]{titlesec}
+\usepackage{caption,subcaption}
+\usepackage{xcolor}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\setlength{\emergencystretch}{3em}
+\newcommand{\nats}{\,\mathrm{nats}}
+\newcommand{\ci}[2]{[#1,\,#2]}
+\newcommand{\head}[2]{L#1h#2}
+\newcommand{\fig}[1]{\IfFileExists{#1}{\includegraphics[width=\linewidth]{#1}}{\fbox{\parbox[c][1.6in][c]{0.96\linewidth}{\centering\path{#1} (pending)}}}}
+
+\title{A Circuit for In-Context Learning}
+\author{Andrew Gao\thanks{Correspondence to gaodrew@stanford.edu. Code and batteries: \url{https://github.com/andrewgcodes/in-context-learning-circuit}.} \\
+Stanford University
+\And
+William Gao \\
+Stanford University}
+
+\begin{document}
+\maketitle
+\vspace{-7mm}\noindent\begin{minipage}{\linewidth}\centering
+\includegraphics[width=0.84\linewidth]{figures/fig1_circuit.pdf}
+\end{minipage}\vspace{-3mm}
+
+\begin{abstract}
+In-context learning (ICL), the ability of a pretrained language model to perform a task specified by demonstrations in its prompt, emerges without being an explicit training objective and requires no parameter updates. When the demonstrations use arbitrary labels, the model must acquire a mapping it could not have memorized during pretraining, so the learning itself must be implemented within a single forward pass. Prior work has identified candidate components, including induction heads, task vectors, and label-token representations, but no end-to-end mechanistic account of how they compose. We provide one for few-shot sentence classification with arbitrary labels in three 3--4B-parameter transformers. We find that the model implements a key-value memory over label-token positions. Each label token's residual stream encodes the label's identity, and middle-layer attention heads write into it the class of the preceding demonstration, which serves as its key. At the query position, the model computes a representation of the query's class, and a distributed set of upper-layer heads matches it against the stored keys and copies out the identities of matching labels. This readout is gated by an early-layer signal encoding whether any label has repeated in context. In its absence, the readout heads attend to the beginning of the prompt and the output does not favor any label, a default that softmax normalization makes unavoidable. A separate set of heads suppresses the most recently seen label, counteracting the recency bias that would otherwise make predictions depend on demonstration order. We establish each step causally: activation patching between minimal-pair prompts differing in a single demonstration sentence, label, or query; head ablations benchmarked against random-head baselines; and steering with the model's own signals at in-distribution magnitudes. The readout is captured by a simple quantitative model that, fit on one prompt distribution, predicts behavior on another, and we characterize where it fails. Components determined by the attention computation are conserved across all three models, while learned details, such as which heads fill each role, vary; we delineate the two. Together, these results show that ICL in this setting reduces to a gated associative lookup assembled from a small number of identifiable component types. To our knowledge, this is the first account of in-context learning in pretrained language models that traces the full computation from demonstrations to prediction and verifies each step causally.
+\end{abstract}
+\section{Introduction}\label{sec:intro}
+Show a base language model a dozen lines like these,
+\begin{quote}\small\ttfamily
+The soup was cold and the waiter rude -> bar\\
+A gorgeous evening with old friends -> foo\\
+\ldots\\
+I would not go back to that place ->
+\end{quote}
+and it answers \texttt{bar}. Nothing in pretraining taught it that \texttt{foo} means a pleasant evening or that \texttt{bar} means a bad meal. The model worked that out from the prompt, in a single forward pass, with no change to its weights. This is few-shot in-context learning~\citep{brown2020fewshot}. It is one of the abilities that turned language models into general tools, and labeling sentences is its simplest form. That simplest form is what we study. Instructions, long-form tasks and many-class binding are outside the scope of this paper.
+
+Several pieces of the answer are known. Induction heads copy a token that followed an earlier copy of the current token~\citep{olsson2022induction}. Task vectors and function vectors~\citep{hendel2023taskvectors,todd2023fv} show that a handful of heads carry a compact description of the demonstrated task at the query. Label tokens are where task information accumulates~\citep{cho2024circuit,zheng2024labelwords,hu2025addition}, and the recency bias of in-context learning has been traced to query--key similarity with label positions~\citep{yu2024qk}. Nobody has joined these pieces into one working algorithm. We do not know, precisely, what is written at the label tokens and on which side of attention. We do not know what reads it, or how that read is switched on and off, or how the result travels to the logits. And we do not know which of the parts are single heads one can name and which are populations that only act in sum.
+
+This paper gives that account for two-class label retrieval and function selection on invented-word and natural labels, at up to twelve demonstrations, in three base models of three to four billion parameters (Qwen3-4B, SmolLM3-3B, Llama-3.2-3B). In the field's terms, we describe a circuit and the algorithm it implements; Figure~\ref{fig:algorithm} draws it as a circuit, Figure~\ref{fig:lanes} lays it along the layers, and Figure~\ref{fig:walkthrough} places it on one prompt. The demonstrations become a key--value memory in the prompt. Each label token becomes a slot. Its value is the label's own identity. Its key is the class of the sentence it followed, deposited into the label token by about twenty mid-layer heads that read the sentence and write into the label (K-composition in the sense of \citealt{elhage2021framework}). At the query the model computes the new sentence's class. About ninety heads in the upper layers then compare that class with the slot keys through an ordinary softmax over positions and copy the values of the slots that match; they behave as class-keyed induction heads. The read is gated. A direction in the residual stream, computed by early duplicate-token heads from whether any label has appeared twice, lowers the logit those readers assign to the attention sink at position zero. When no label repeats the sink wins and the model emits nothing in particular. We call this the null action, and it follows from the softmax: mass must go somewhere, and the sink is the only position that carries no prompt. A further population of about two dozen heads writes against whichever label the model has just seen. These are negative heads in the sense of \citet{wang2022ioi} and \citet{mcdougall2023copysuppression}. We call them brakes, because removing them triples the margin and makes the model recency-biased.
+
+Every step rests on an intervention with a matched control. We swap one sentence, one label, or one query between twin prompts that are token-identical elsewhere, and hand the resulting activations into the intact run head by head, group by group, or position by position. We knock heads out against random heads of the same number and layers. We push directions into the residual stream at the dose the model itself uses, against random directions of the same norm. Every head set chosen on one draw of prompts is confirmed on a fresh draw. Where the model concentrates a function in a few heads we name them. Where it spreads a function over many, we characterize the population by the direction it reads or writes and show that the direction is specific against a random subspace of the same dimension. The answer is also accounted for exactly: on each prompt, the contributions of every head and MLP to the answer logit sum to the logit the model produces, to within 0.05 nats.
+
+Two things surprised us. The read obeys a simple law. Each reader's mass on the matching slots follows a three-constant softmax expression in the number of matching slots, the number of slots and the null logit. The constants fitted on twelve-demonstration prompts predict a one-slot-per-class regime that was never fitted, in Qwen and in Llama. The same constants fail on longer prompts. That failure says a head's null mass and its total matching mass are constants of the head, so adding matching slots divides a fixed budget among them. The second surprise is that half of the links are populations for a reason we can state. A single reader already separates the two classes in its attention pattern. What no head has is the output gain to write the answer alone; no head writes more than 0.2 nats of logit, and a 1.3-nat answer therefore needs at least seven.
+
+Section~\ref{sec:setup} describes the prompts, measures and interventions. Sections~\ref{sec:slot}--\ref{sec:accounting} follow the computation from the slot, through the read, the gate and the query code, to the readers, brakes and the final logits. Section~\ref{sec:replication} asks which parts of the account must hold in any transformer and which are choices made by training, and tests the account in two further models and across training checkpoints. Section~\ref{sec:discussion} states what the account does not cover, including two predictions that did not hold.
+
+\begin{figure}[t]\centering
+\fig{figures/fig8_walkthrough.pdf}
+\caption{One twelve-demonstration prompt, stage by stage. Columns are tokens (sentences $s_i$, arrows, labels, the query $q$); rows are layers of Qwen3-4B. Each coloured block marks the tokens and layers at which a stage acts: duplicate detectors and the encoder early, writers into the label tokens in the middle layers, then at the query arrow the query code, the gate, the readers, the brakes and the readout band. Later sections give the intervention behind each block.}
+\label{fig:walkthrough}
+\end{figure}
+
+\section{Setup}\label{sec:setup}
+\paragraph{Prompts.} Every prompt in the paper is a list of demonstrations, one per line, written \texttt{sentence -> label}, followed by a query sentence and an arrow. The model's next token is the answer. We use four batteries. The \emph{concept} battery has six demonstrations, three per class, on sentence axes such as topic (animals against food), sentiment, language (English against Spanish) and question against statement, with invented-word labels (\texttt{foo}/\texttt{bar}, \texttt{quil}/\texttt{zorp}) and natural ones. The \emph{concept12} battery has twelve demonstrations, six per class. The \emph{slotgate} battery has four demonstrations and comes in token-identical pairs: in one member each label appears twice, in the other every label appears once, so the pair differs only in whether labels repeat. The \emph{manyclass} battery has two to six classes with one or more demonstrations each and arbitrary single-token labels. Appendix~\ref{app:prompts} shows one verbatim prompt from each. All labels except \texttt{zorp} are single tokens in all three tokenizers; for a two-token label, the first token carries the key.
+
+\paragraph{What we measure.} The margin of a prompt is the log-probability of the correct label minus that of the other label, scored over the full token sequence of each. A positive margin means the model prefers the right answer; a margin of 2 nats means it prefers it by a factor of about seven. The effect of an intervention is the change in margin it causes, paired prompt by prompt against the intact run, and every effect is reported with a 95\% interval from a paired bootstrap over prompts (4000 resamples). When we say a head set ``costs $-0.74$ nats'', we mean knocking it out lowers the margin by that much on average.
+
+\paragraph{Twins.} Most interventions use twin prompts: two prompts that are identical token for token except inside one span. We use five twins. The class-flipped sentence replaces one demonstration's sentence by one of the other class. The same-class sentence of equal length is the same-answer control. The label exchange swaps \texttt{foo} and \texttt{bar} everywhere. The other-class query replaces the query sentence. The unique-label rewrite replaces each repeated label by a fresh one. Because the twins are aligned token for token, we can take any activation from one and place it into the other at the same position, and ask how much of the twin's effect that activation carries. We call this a handoff.
+
+\paragraph{Interventions.} A \emph{knock} mean-ablates a head's output over the battery, which removes what the head writes without zeroing it. A \emph{handoff} replaces a head's, group's or layer band's queries, keys, values or output at chosen positions with the twin's. A \emph{push} adds a direction to the residual stream at the query arrow at the dose the model itself uses (the difference in projection between twins), with a random direction of the same norm as control. A \emph{hold} fixes a downstream component at its intact value while an upstream handoff runs, which tells us whether the upstream effect passes through that component. All of these are forward hooks on the HuggingFace implementations in bfloat16 on one H100. Alongside them run the loupes: per-head attention rows at chosen layers, per-head and per-MLP direct contributions to the answer logit, and projections of the residual stream on fitted directions.
+
+\paragraph{Controls.} Every named head set is compared with random sets of the same size drawn from the same layers. Every direction push is compared with a random direction of the same norm. Every set selected on one draw of prompts is confirmed on a fresh draw from the same pools with a different seed, and the numbers we lead with are from the fresh draw.
+
+\paragraph{Models.} Qwen3-4B-Base (36 layers, 32 query heads, 8 key--value groups, QK-norm), SmolLM3-3B-Base (36 layers, 16 heads, 4 groups) and Llama-3.2-3B (28 layers, 24 heads, 8 groups), plus intermediate checkpoints of OLMo-2 1B and 7B for the emergence study. We write L$\ell$h$h$ for head $h$ of layer $\ell$, zero-indexed.
+
+\section{Where is the memory? (the slot)}\label{sec:slot}
+\begin{figure}[t]\centering
+\includegraphics[width=\linewidth]{figures/fig1_circuit.pdf}
+\caption{The circuit for few-shot in-context learning in Qwen3-4B-Base. Prompt tokens run down the left (sentences $S_i$, labels $L_i$, the query $Q$ and its arrow END); boxes are classes of attention heads with layer.head beneath. Writer Heads give each label token a key (the class of its sentence) next to its value (the label); at END, Reader Heads match the query's class against those keys and copy the matching labels, Copier Heads write the logits, Brake Heads write against the most recent label, and the gate $g$ (Pooling Heads) opens the read by lowering the readers' attention-sink logit (dashed). Section~\ref{sec:slot} onward gives the intervention behind each arrow.}
+\label{fig:algorithm}
+\end{figure}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\linewidth]{figures/fig1_algorithm.pdf}
+\caption{The same circuit laid along the layers of Qwen3-4B-Base. Top lane: what happens at the label tokens (duplicate-token heads mark a repeated label; writers deposit the sentence's class into the label's residual stream, making it a slot with a value and a key). Bottom lane: what happens at the query arrow (the encoder computes the query's class; the pooled repeat signal $g$ lowers the readers' sink logit; readers match the query class against the slot keys and copy the matching values; the readout band and late MLPs write the logits, with the brakes writing against the last label).}
+\label{fig:lanes}
+\end{figure}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\linewidth]{figures/fig18_interventions.pdf}
+\caption{The four interventions. Each panel shows the end of a 12-shot prompt; the red component is replaced or steered and the output is read at END. (a)~Sentence swap: the keys at the label token are taken from the twin prompt whose demonstration sentence belongs to the other class, so the slot's key no longer matches its value. (b)~Label swap: the values at the label token are taken from the twin with the labels exchanged. (c)~Gate steering: the model's own gate direction $g$ is added at END at its natural magnitude before the reader layers, and the readers' attention to the sink and to matching slots is measured. (d)~Query-code handoff: the outputs of the two query heads at END are taken from the twin with the query of the other class; later attention outputs can be held fixed to test whether the effect passes through them.}
+\label{fig:interventions}
+\end{figure}
+
+\begin{figure}[t]\centering
+\fig{figures/fig15_slot.pdf}
+\caption{Anatomy of a slot. The residual stream at a label token holds two things read through two different matrices. The label's identity arrives from the token's own embedding and early layers and is read by the readers' $W_V$; the class of the sentence it followed is written in by middle-layer heads that attend back to the sentence, and is read by the readers' $W_K$ as the key the query class is matched against.}
+\label{fig:slotanatomy}
+\end{figure}
+
+After the model has read twelve demonstrations, where is the information it will need? Each demonstration has a sentence and a label, and the model will later need to know, for each demonstration, which class the sentence belonged to and which label followed it. Both pieces end up in the same place: the residual stream of the label token. We call that residual a slot, because it behaves like one cell of a key--value memory. Its value is the label's own identity. Its key is the class of the sentence that came before it. The two live on different sides of attention, and two experiments pull them apart.
+
+The first experiment exchanges the labels. Take a prompt and swap \texttt{foo} and \texttt{bar} throughout, leaving every sentence where it is. The right answer to the query is now the other label, and the model's margin flips sign. To find which activations carry the flip, we hand the swapped prompt's keys and values at the label tokens, and nothing else, into the intact run. That reproduces the whole flip, to the last digit, in all three models: $-7.18$ nats in Qwen, $-5.55$ in SmolLM3 and $-4.92$ in Llama, each equal to the effect of the swapped prompt itself. Handing the same keys and values at every position of the reader layers instead gives $-7.15$, $-4.94$ and $-4.55$; the label tokens are where the swap lives. Handing the values alone reproduces it (the eight sharpest readers' values carry $-2.16$); handing the keys alone does not ($+0.56$). So the label's identity sits in the value side of the slot. It is not spread evenly over the value side: handing the values of single key-value groups shows three of the 72 groups in layers 21--29 carrying about half of the exchange's effect, and one group in layer 24 a quarter (Figure~\ref{fig:transport}).
+
+The second experiment leaves the labels alone and changes a sentence. Replace one demonstration's sentence by a sentence of the other class, so that \texttt{foo} now follows a complaint instead of a compliment. This also moves the answer, by $-2.87$ nats on the six-demonstration battery. Now the effect runs through the keys. Handing the changed prompt's keys at the label tokens in layers 21--29 carries $-2.35$ of it; the eight sharpest readers' keys carry $-0.55$ and their values $+0.10$. In Llama the same experiment localizes the key to the label tokens' K/V in the middle layers only: layers 7--13 and 14--20 each carry $-0.15$ of a $-0.23$ twin effect, while layers 0--6 and 21--27 carry $-0.02$ and $-0.04$. Early layers have not written the key yet, and late layers have already read it. Figure~\ref{fig:writers}a shows the profile.
+
+A control tells us the second experiment measures the class and not the sentence. Replacing a demonstration's sentence by a different sentence of the same class and the same token length moves the answer by $+0.08$ nats, with every handoff from that twin inside $\pm0.06$. Whatever the slot stores about its sentence, only the class part reaches the answer.
+
+How does the class get into the label token? The label token does not see its sentence directly; attention must carry it. About twenty heads in layers 10--23 do so. Each attends from the label token back to the words of its own sentence and writes the class direction into the label's residual. No one of them carries more than 5\% of the effect and the top twenty together carry 64--92\%; knocking six named writers does no more than knocking six random heads of the same layers. The class they write is one direction $u$ per task, the same for both labels (held-out sign agreement 0.95--1.00), so a two-class key needs one dimension. Writing it must be spread across depth. Adding the same total dose of $u$ to the label tokens in one layer helps less than spreading it over four layers. In SmolLM3, on the 144 prompts of the axes the model does not bind on its own (with the query's class pushed as well), the single-layer write at layer 16 gains $+0.37$ \ci{+0.29}{+0.46} and the same dose spread over layers 12, 14, 16 and 18 gains $+0.56$ \ci{+0.48}{+0.65}. At double dose the single-layer write falls back to $+0.20$ \ci{+0.09}{+0.31} where the spread write keeps climbing ($+0.69$ \ci{+0.58}{+0.81}; Figure~\ref{fig:writers}b). We read this as the writers being contextualisation heads: each layer's write is read and reshaped by the next, and a dose dumped in one place does not get the same treatment.
+
+The slot is also the bottleneck. Features the model never represents linearly at the arrow (word parity, the third letter, digit rules) never bind at any number of demonstrations. Writing $u$ into the slots of such a prompt by hand lifts accuracy from 50 to 71\%; key-only, query-only and random directions stay within $\pm0.1$ (Appendix~\ref{app:encoder}). If the key is there, the rest of the circuit works; if it is not, no amount of reading helps. The next question is how the reading works.
+
+\begin{figure}[t]\centering
+\fig{figures/fig2_slot.pdf}
+\caption{The slot holds a value and a key on different sides of attention. (a) Exchanging the labels: the effect runs through the label tokens' values in all three models. (b) Changing a sentence with the label fixed: the effect runs through the label tokens' keys, in the middle layers only. (c) A same-class sentence of the same length moves the answer by at most 0.06 nats. Bars are paired effects on the margin with 95\% bootstrap intervals; grey bars are size-matched random controls.}
+\label{fig:slot}
+\end{figure}
+
+\begin{figure}[t]\centering
+\fig{figures/fig13_transport.pdf}
+\caption{Three KV groups carry half of the label's value. Handing the values of all 72 layer 21--29 KV groups at the label tokens, from a prompt with the labels exchanged, carries 86\% of the exchange's effect on the margin (left). By layer, the effect sits in layers 22, 24 and 29 (right, grey); within each, one KV group carries most of it (red): group 24.5 alone carries a quarter, groups 24.5, 29.2 and 22.5 together about half. Random head sets of the same size move the margin by 0.03 or less (dotted). Qwen3-4B, 12-shot invented-label prompts, 72 prompts.}
+\label{fig:transport}
+\end{figure}
+
+\begin{figure}[t]\centering
+\fig{figures/fig14_writers.pdf}
+\caption{The key is written in the middle layers, and the write must be spread. (a) In Llama-3.2-3B, handing the sentence-exchanged prompt's label-token keys and values per layer band: the two middle bands carry the effect, the first and last almost none. (b) In SmolLM3, adding the same total dose of the class direction $u$ to the label tokens in one layer helps less than spreading it over four, and falls back at double dose where the spread write keeps climbing (95\% intervals; 144 prompts).}
+\label{fig:writers}
+\end{figure}
+
+\section{What reads it? (Reader Heads and the read law)}\label{sec:read}
+With the memory in place, the query has to be looked up in it. The lookup is done by attention heads. Each reader performs an ordinary softmax over the prompt's positions. The attention sink at position zero takes part in that softmax as a position with no content. The mass a reader puts on the right slots follows a three-constant expression that we can fit in one regime and test in another.
+
+\paragraph{Notation.} Write $h_q$ for the residual stream at the query arrow when a reader head runs, and $r_j$ for the residual at the $j$-th label token. The head forms $q = \mathrm{RoPE}(\gamma_q \odot \mathrm{norm}(W_Q h_q))$ and $k_j = \mathrm{RoPE}(\gamma_k \odot \mathrm{norm}(W_K r_j))$, where norm is the per-head RMS normalization Qwen applies and $\gamma$ its gain; Llama and SmolLM3 omit the normalization. The logit for position $j$ is $\ell_j = q^\top k_j / \sqrt{d}$ and the attention weight is $\mathrm{softmax}_j(\ell)$ over all positions up to the query. We write $N$ for the number of slots, $n_m$ for the number whose class matches the query, $L$ for the logit of a matching slot, $L_{\mathrm{sink}}$ for the logit of position zero, and we set the non-matching slots' logit to zero by choice of origin.
+
+\begin{proposition}[Matching mass]\label{prop:law}
+Suppose the matching slots share the logit $L$, the non-matching slots the logit $0$, the sink the logit $L_{\mathrm{sink}}$, and the remaining positions together contribute $n_{\mathrm{rest}}$ units of unnormalized mass. Then the attention mass on the matching slots is
+\begin{equation}
+m \;=\; \frac{n_m e^{L}}{\,n_m e^{L} + (N-n_m) + n_{\mathrm{rest}} + e^{L_{\mathrm{sink}}}\,}.
+\label{eq:law}
+\end{equation}
+\end{proposition}
+\begin{proof}
+The softmax denominator is the sum of $e^{\ell_j}$ over positions; group the terms by type and divide the matching slots' share by the total.
+\end{proof}
+
+The proposition is trivial as algebra. Its content is the claim that three numbers per head, fitted once, describe the head's behavior as the prompt changes. We test that by varying $n_m$ and $N$. On twelve-demonstration prompts with two, three, four or six classes ($n_m$ equal to six, four, three or two), Equation~\ref{eq:law} with three fitted constants reproduces the measured matching mass within 0.1 for 127 of the 140 Qwen heads that put at least 0.03 of their mass on slots. In Llama it does so for 124 of 125 such heads, with a median maximum error of 0.02. The sharpest readers put 0.6--0.8 of their mass on the matching slots with two classes and about 0.45 with six; the diffuse ones a few hundredths.
+
+A fit within a regime is weak evidence. The stronger test is to predict a regime that was never fitted. Keeping each head's three constants and setting $n_m = 1$, the law predicts the one-slot-per-class battery with a median error of 0.07 in Qwen (69\% of heads within 0.1) and 0.04 in Llama (83\%). Figure~\ref{fig:law} shows measured against predicted mass for both.
+
+We then tried to predict in the other direction, and this is where the law stops. We computed every head's predicted mass on eighteen-demonstration prompts (three to nine slots per class) from the twelve-demonstration constants, and set a criterion of a median error below 0.07. The observed medians were 0.15 in Qwen and 0.13 in Llama, with 92--94\% of heads over-predicted. The attention rows say why. A head's null mass is a constant of the head: the sharpest Qwen readers put 0.34--0.36 of their mass on the sink at every slot count and at both prompt lengths, Llama's 0.42--0.45. A head's total matching mass is nearly a constant too: \head{29}{11} puts 0.18 on the matching slots when there are six of them and 0.19 when there are nine. Extra matching slots divide a fixed class budget among themselves. Within one prompt length the growth from two to six slots per class is real, which is why the fit worked, but it is saturating, and the fit absorbed the saturation into $n_{\mathrm{rest}}$ and $L$. Equation~\ref{eq:law} is therefore a law for a fixed prompt length that transfers to fewer slots per class. The failure established two facts the rest of the paper uses: the gate acts on the fixed null mass, and the readers' need to sum follows from the fixed class budget.
+
+\begin{figure}[t]\centering
+\fig{figures/fig3_law.pdf}
+\caption{The read follows a softmax law within a regime and transfers to fewer slots per class, not to longer prompts. Measured matching-slot mass against the prediction of Equation~\ref{eq:law} from twelve-demonstration constants, one point per head and slot count. (a) Qwen, fitted regime. (b) Qwen and Llama, one slot per class (held out). (c) Qwen and Llama, eighteen demonstrations (held out; the prediction fails): sharp readers sit on the line, diffuse heads fall below it.}
+\label{fig:law}
+\end{figure}
+
+\section{What opens the read? (the gate)}\label{sec:gate}
+A memory that is always read would be a liability. Most text contains no demonstrations, and a model that copied the label after every arrow would be wrong most of the time. So the read has to be switched on only when there is something to read. The switch is a single direction in the residual stream at the query. It is computed from whether any label has appeared twice, and it works by lowering the logit the readers assign to the attention sink. Figure~\ref{fig:readerrows} shows three readers in three states: reading when a label repeats, partly back on the sink when the repeat detectors are removed, and on the sink throughout when no label repeats.
+
+With one demonstration per class the model retrieves the right label about 20\% of the time; with two per class 60--80\%; with six, 96\%. The requirement is for the prompt as a whole: a label that appears once is retrieved correctly when the other labels in the prompt repeat. Something in the prompt-level statistics opens the read.
+
+It is one direction, which we call $g$. Fitted on the residual at the query arrow in layer 23, it separates prompts whose labels repeat from token-identical twins whose labels are all distinct with held-out sign agreement of 1.00, and it is orthogonal to the key direction $u$. Prompts with repeated labels project on it at about $+18$; their unique-label twins at about $-21$. Where does $g$ come from? Flat pooling heads in layers 20--23 attend evenly over the slots and carry it into the arrow; handing their values from the twin carries 93--100\% of the projection, handing their keys 3--10\%. And the slots carry it because of sixteen duplicate-token heads in layers 1--9 that attend from each label token to earlier copies of the same token. Mean-ablating those sixteen heads drives the projection on recurring prompts from $+18.3$ to $-0.3$, which is the unique-label value; sixteen random heads move it by at most 0.7, and the sixteen highest-scoring induction heads by 4.2 (Figure~\ref{fig:gate}a). The first half of the classic induction circuit, the duplicate-token detector, is here put to a second use: it does not drive copying directly, it reports that there is something to copy.
+
+What $g$ does is lower the null logit. The readers' softmax contains the sink at position zero, and a reader that puts most of its mass there copies nothing. Adding $g$ to the residual at the arrow of a unique-label prompt, at the dose the model itself uses, lowers each reader's sink logit relative to its matching-slot logit: by 1.75 nats at \head{24}{8}, 3.25 at \head{28}{0} and 3.65 at \head{29}{11}. Across the distributed readers the drop is 0.74 at natural and 1.41 at double dose. A random direction of the same norm moves it by at most 0.2 (Figure~\ref{fig:gate}b). The separation between matching and non-matching slot logits moves by only $+0.46$ to $+0.54$, a seventh as much (Figure~\ref{fig:gate}c). Handing in the whole recurring twin moves the sink logit by the same 1.5--3.9 nats and leaves that separation unchanged or smaller. The gate opens the read; it does not sharpen it. At the parameter level the same picture holds. $g$ projects onto the 89 upper-layer slot-reading heads' sink-versus-slots query functionals with the releasing sign: population cosine $-0.03$ against a random $|\cos|$ of 0.015, the sharpest witnesses at $-0.09$ to $-0.11$. It does not project onto their match functionals ($|\cos| \le 0.02$). It carries 10--11\% of its energy in the span of those functionals against 3.3\% for a random subspace of the same dimension. The sign and the selectivity are facts about the weights; the magnitude is spread over more heads than the slot-reading census contains.
+
+\begin{corollary}[Null action]\label{cor:null}
+Under the conditions of Proposition~\ref{prop:law}, if $e^{L_{\mathrm{sink}}} > n_m e^{L}$ the reader returns more of the sink's value than of the matching slots', and a prompt-global signal can change this only through a term that enters $L_{\mathrm{sink}} - L$, that is, through the reader's query.
+\end{corollary}
+
+The corollary says why the gate acts where it does. A softmax must put its mass somewhere; position zero carries no prompt content; a reader whose null logit exceeds its match logits returns the sink and the model emits nothing in particular. We call this the null action. It is a consequence of the architecture, and the only lever a prompt-level signal has on it is the readers' query side, which is where $g$ acts and with the sign the corollary requires. The Llama-3.2-3B gate differs in strength and control. 67\% of its unique-label prompts still receive a label at four demonstrations, against 10\% in Qwen, and the heads a generic induction score picks out hold the mid-layer readers in the sink instead of releasing them (Section~\ref{sec:replication}). With the read open, the next question is what the readers are matching against.
+
+\begin{figure}[t]\centering
+\fig{figures/fig4_gate.pdf}
+\caption{The gate lowers the null logit and leaves matching alone. (a) Projection of the arrow residual on $g$ for prompts with repeated and with unique labels, intact and with the sixteen duplicate-token heads ablated (random and induction-scored sets as controls). (b) Change in each reader's sink-minus-match logit under $+g$ at natural and double dose, with same-norm random directions in grey. (c) Change in the same readers' match-minus-other logit.}
+\label{fig:gate}
+\end{figure}
+
+\begin{figure}[t]\centering
+\fig{figures/fig12_reader_rows.pdf}
+\caption{What a reader looks at. Attention mass from the query arrow onto the first position (sink) and the four label slots, for three Qwen3-4B readers, averaged over 30 four-demonstration prompts. Top row: two labels each used twice; the matching slot (slot 3 or 4, depending on the prompt) draws the mass. Middle: the same prompts with the sixteen repeat-detector heads mean-ablated; \head{29}{11} goes back toward the sink (0.21 to 0.40) while \head{24}{21} and \head{22}{20} do not move, so the detectors' signal reaches some readers and not others. Bottom: four distinct labels, none repeated; \head{29}{11} puts 0.91 of its mass on the sink and reads nothing.}
+\label{fig:readerrows}
+\end{figure}
+
+\section{What do the readers match against? (the query code)}\label{sec:query}
+The slot keys are one half of the match; the other half is whatever the readers bring from the query. One might expect the query to carry the same class direction $u$ that the slots hold, so that the match is a dot product of like with like. It does not. The query carries a code of its own, written by two heads, shaped for the readers that consume it.
+
+The experiment is the query flip: replace the query sentence by one of the other class and hand single activations from the flipped prompt into the intact run at the arrow. Handing the attention outputs of layers 21--29 carries $-1.10$ \ci{-1.39}{-0.82} of the $-1.33$ nat flip in Qwen, so the readers are where the query's class acts. Handing the outputs of just two heads one layer earlier, \head{22}{10} and \head{23}{26}, carries $-0.53$ \ci{-0.68}{-0.39}, 40\% of the flip, while any pair of random heads from the same layers carries under 0.05. These two heads compute the query's class at the arrow. What they write is not $u$: it has cosine 0.07 with the key direction, and it is not the weight-probe direction of any single reader. It is the direction that moves the reader population's match logits. For each reader, the query-side functional for ``match against the class-$c$ key'' is a vector in residual space, $W_Q^\top$ applied to the mean key difference; the span of these functionals over the layer 24--29 readers contains 64\% of the pair's write, against 4\% for a random subspace of the same dimension. The code is written in the readers' own coordinates.
+
+Who reads it? Holding the attention queries of layers 24--29 at their intact values while the pair's handoff runs removes most of the effect ($-0.14$ remains); holding layers 24--35 removes 93\% ($-0.04$ remains); holding the late MLPs as well leaves $-0.01$. The late MLPs held alone make the effect larger ($-0.66$), which means they push against the query code in the intact run. The map is therefore: two heads write the code at layers 22--23; the attention queries of layers 24--35 read it, with the last quarter taken by the copiers of layers 30--35; the final MLPs oppose it.
+
+Across models the concentration differs. SmolLM3 spreads the query computation over more heads with no pair carrying 40\%, and Llama's query-side effect spans layers 10--27 (band handoffs $-0.03$, $-0.18$, $-0.13$ for layers 0--9, 10--17, 18--27). What is common is that the query carries a code separate from the key, consumed by the readers' queries. Figure~\ref{fig:query} shows the consumer map and the functional-span test. With both sides of the match in hand, we turn to the heads that perform it and the heads that resist it.
+
+\begin{figure}[t]\centering
+\fig{figures/fig5_query.pdf}
+\caption{Two heads write a query code that the reader population consumes. (a) Share of the query-flip effect carried by the pair \head{22}{10}+\head{23}{26}, by all layer 21--29 attention, and remaining when downstream attention queries are held intact. (b) Energy of the pair's write in the span of the readers' match functionals against random subspaces of the same dimension.}
+\label{fig:query}
+\end{figure}
+
+\section{Who writes the answer, and who resists it? (Reader and Brake Heads)}\label{sec:populations}
+\begin{figure}[t]\centering
+\includegraphics[width=\linewidth]{figures/fig17_headgrid.pdf}
+\caption{No single head carries the answer. Effect on the 12-shot class margin of knocking one head at the query position (mean over 144 prompts from six label families; blue lowers the margin, red raises it; colour clipped at $\pm0.15$ nats), for every head in the reader layers of Qwen3-4B-Base (layers 21--35) and Llama-3.2-3B (layers 16--27). Outlined cells are the five most negative and five most positive heads. The largest single-head effects are $-0.14$ nats (Qwen L23h26, a query head) and $+0.13$ (Qwen L31h30, a brake), and $-0.09$ / $+0.12$ in Llama (L18h10, L19h1), against a 1.3-nat margin; the sets built from these rankings move the margin by $-0.74$ and $+1.39$ (Qwen) and $-0.56$ and $+1.90$ (Llama) when knocked together (Table~\ref{tab:claims}).}
+\label{fig:headgrid}
+\end{figure}
+
+The readers are about ninety heads, and about two dozen heads work against them. Neither number is an accident of our search; the model uses many heads where a few would seem to do, and the arithmetic below says why.
+
+A reader, concretely, is an upper-layer head whose attention from the arrow prefers slots whose class matches the query. Twenty readers chosen on one draw of prompts and knocked out together on a fresh draw cost $-0.74$ \ci{-0.95}{-0.55} nats; twenty random heads from the same layers cost $+0.02$. No single reader is necessary: the largest single-head knock in Qwen costs 0.09. Against the readers stand the brakes, twenty-four heads in layers 22--34 that write against the label the model has just seen. Knocking them on a fresh draw raises the margin by $+1.39$ \ci{+0.88}{+1.88}, nearly tripling it; twenty-four random heads give $+0.22$. The brakes are negative heads in the sense of the indirect-object circuit's negative name movers and of copy suppression: they take a label that is being copied and push the logits the other way.
+
+What the brakes buy is calibration. Permuting the order of the demonstrations leaves the mean margin unchanged but moves single prompts by more than a nat on half of them, and the readers themselves are recency-biased, with a gradient of 0.5--0.85 nats from the first slot to the last. With the brakes removed the model follows that gradient and prefers whichever label came last. At six demonstrations the brakes carry the anti-recency term outright; at twelve they hold the model order-neutral against the readers' pull. Figure~\ref{fig:populations} shows the reader--brake interaction and the order effect.
+
+Why populations? One might think the model spreads the read over ninety heads because no single head can tell the classes apart. The attention rows say otherwise. A single reader's class bias is 0.2--0.4 nats against a per-slot spread of about 0.5, so one head already separates the classes in its own attention pattern, if weakly. What no head has is output gain.
+
+\begin{proposition}[Gain bound]\label{prop:gain}
+Let head $i$ attend with mass $m_i$ to slots whose values differ by $\Delta v$ between the two labels, with output-value matrix $W_{OV}^{(i)}$, and let $w$ be the final-norm-scaled unembedding direction of the correct minus the alternative label. The head's direct contribution to the margin is at most $m_i\,\|W_{OV}^{(i)}\Delta v\|\,\|w\|/\rho$, where $\rho$ is the RMS scale of the final residual. If every head's bound is at most $\beta$ and the margin is $M$, at least $\lceil M/\beta \rceil$ heads contribute.
+\end{proposition}
+
+Measured, no head in Qwen writes more than 0.2 nats of the answer logit directly (Section~\ref{sec:accounting}), so a 1.3-nat class flip needs at least seven heads; the model uses 14 for half of it and 46 for 80\%. Gain forces the populations; missing signal does not. We therefore characterize them by the direction they read and write and test that direction against random subspaces. Searching for a single responsible head would look for something the arithmetic says cannot exist. The same arithmetic predicts that knocking the seven largest direct movers in the copier band should remove 0.3--0.5 of the $+0.68$ twelve-demonstration margin. It removed $-0.16$ \ci{-0.56}{+0.24}: the predicted sign, smaller than predicted, with an interval that includes zero. We count it as weak support.
+
+\begin{figure}[t]\centering
+\fig{figures/fig6_populations.pdf}
+\caption{Readers and brakes act as populations with opposite signs. (a) Joint knock of 20 readers, 24 brakes, and both, on a fresh draw, against size-matched random sets (grey). (b) Order effect: margin against the position of the last matching demonstration, intact and with brakes knocked.}
+\label{fig:populations}
+\end{figure}
+
+\section{Does it add up? Exact accounting and validation}\label{sec:accounting}
+The sections so far locate each step by the change it causes. We can also ask a stricter question of a single prompt: which components wrote the answer's logit, and how much each. The residual stream before the final norm is a sum over components, so the answer logit decomposes exactly.
+
+\begin{proposition}[Direct decomposition]\label{prop:dla}
+Let $x = e + \sum_i a_i + \sum_l m_l$ be the final residual at the arrow, with $e$ the embedding, $a_i$ the head outputs and $m_l$ the MLP outputs, and let $\rho = \mathrm{rms}(x)$. With $w = \gamma \odot W_U^\top(\mathbf 1_{y} - \mathbf 1_{y'})$ for the final-norm gain $\gamma$ and labels $y, y'$, the margin is $\mathrm{logit}(y) - \mathrm{logit}(y') = \big(w^\top e + \sum_i w^\top a_i + \sum_l w^\top m_l\big)/\rho$.
+\end{proposition}
+
+The proposition is an identity, and we use it as a check: on every prompt the right-hand side, computed from the hooked components, agrees with the model's own margin with a mean error of 0.045 nats in Qwen and 0.048 in SmolLM3. The decomposition then says who writes the answer. On intact twelve-demonstration prompts the margin is $+0.68$ nats; attention in layers 30--35 contributes $+0.66$, attention in layers 21--29 $+0.14$, and the late MLPs $-0.11$. Under the exact class flip the answer swings by $-1.33$: the layer 30--35 band moves by $-1.12$, the readers by $-0.36$, and the late MLPs the other way, by $+0.25$. The readers, then, are the source of the answer and not its writer. They collect the label values into the arrow; a band of copier heads in the last six layers reads that and writes the logits; the final MLPs act as a prior toward the label seen most and oppose the flip. Fourteen heads carry half the direct swing and 46 carry 80\% in Qwen; eight and 45 in SmolLM3. Figure~\ref{fig:waterfall} shows the decomposition as a waterfall and Figure~\ref{fig:accounting} the per-head concentration curve. The direct accounting assigns nats to the last writer; the handoffs of the previous sections assign them to the source. Together they close the path from slot to logit.
+
+\begin{figure}[t]\centering
+\fig{figures/fig7_accounting.pdf}
+\caption{Every nat of the answer assigned to a component. (a) Direct contributions to the margin by layer band, intact and under the class flip, Qwen and SmolLM3. (b) Cumulative share of the flip against number of heads, sorted by contribution.}
+\label{fig:accounting}
+\end{figure}
+
+\begin{figure}[t]\centering
+\fig{figures/fig9_waterfall.pdf}
+\caption{The answer as a sum of bands. Left: the intact twelve-demonstration margin in Qwen, built up band by band; the layer 30--35 copier band writes almost all of it. Right: the change under the exact class flip; the copier band carries most of the swing, the readers a quarter, and the late MLPs push the other way.}
+\label{fig:waterfall}
+\end{figure}
+
+
+\paragraph{Faithfulness, completeness, minimality.} \citet{wang2022ioi} ask three things of a circuit. Faithfulness: the exact decomposition above is a per-prompt faithfulness check, with the circuit's components reproducing the model's margin to 0.045 nats. Completeness: every named set was selected on one draw of prompts and tested on a fresh draw against random sets of the same size and layers (readers $-0.74$ against $+0.02$; brakes $+1.39$ against $+0.22$; the Llama sets $+1.90$ and $-0.56$ against $+0.12$ and $0.00$), so the sets carry their function on prompts they were not chosen on. Minimality is where the account departs from a sparse circuit. No single reader or brake is necessary: the largest single-head knock in Qwen costs 0.09 nats and in Llama 0.12, and Proposition~\ref{prop:gain} says why no minimal head can exist for a 1.3-nat answer when no head writes more than 0.2 nats. We therefore report populations with their direction-level tests in place of a minimal head set, and say so wherever it applies.
+
+\section{Three models, one algorithm}\label{sec:replication}
+Should three models trained by three groups on three corpora run the same algorithm? Not in every detail, and it helps to say in advance which details are free. Some parts of the account follow from attention itself: a softmax over positions has to put its mass somewhere, position zero is the only position that carries no prompt, and a key written into a label token can only be read through that token's keys. Those parts should appear in any transformer that does the task, and if a fourth model lacked them we would count the account falsified. Other parts are choices that training makes: which heads do each job, how many of them, how strong the gate is, in which layers the work happens. Those we expect to differ, and we report them as the model's implementation of the algorithm. A link counts as replicated when the same intervention has the same sign with an interval that excludes zero and the matched control inside noise; we do not ask the magnitudes to agree, and they differ by up to a factor of three.
+
+By this standard the account replicates in SmolLM3-3B and Llama-3.2-3B. The slot's value and key dissociate in both (Section~\ref{sec:slot}). The read law fits 124 of 125 Llama slot-reading heads and predicts the one-slot regime more tightly than in Qwen. The null action exists in both. The implementation differs in ways worth recording. Llama's readers sit in layers 14--27 of 28 where Qwen's sit in 21--29 of 36. Llama's gate is weaker: 67\% of its unique-label prompts still receive a label, against 10\% in Qwen. The heads a generic induction score selects act as a withholding population there. They hold the mid-layer readers in the sink, and ablating them raises the margin by about a nat (Figure~\ref{fig:gatemodels}). Where Qwen has two nameable query computers, SmolLM3 and Llama spread the query computation. And where Qwen's 24 brakes stand out in a single-head census, Llama's do not: a census of all 288 Llama heads found no head whose knock moves the margin by more than 0.12 nats, 271 of them within $\pm 0.03$. Yet the sets exist. The 24 heads the census ranks as brakes, knocked together on a fresh twelve-demonstration draw, raise the margin by $+1.90$ \ci{+1.12}{+2.67} against $+0.12$ for 24 random heads, and the 20 heads it ranks as readers cost $-0.56$ \ci{-1.01}{-0.12} against $0.00$. At six demonstrations, where Llama's margin is only $+0.40$, the brake set gives $+0.57$ \ci{+0.19}{+0.93} against $+0.16$ and the reader set is not detectable. Llama has the same two populations as Qwen, each weak head by head and strong as a set.
+
+The algorithm also assembles in a fixed order during training. Across OLMo-2 checkpoints the copy of a repeated label appears first, the null action second, and the readers' class selectivity last; the 1B model never develops the readers, which is why it does not do the task. The order is the one the dependencies require: nothing can be gated before there is something to copy, and nothing can be matched by class before the keys are written (Figure~\ref{fig:olmo}, Appendix~\ref{app:olmo}).
+
+\begin{table}[t]\centering\small
+\caption{Each link of the account in three models. Forced: follows from the architecture and is expected in every model. Implementation: set by training and reported per model. Named: a small set of heads is necessary and sufficient. Population: no single head is necessary; the link is characterized by a direction with a size-matched random control. --: not run.}
+\label{tab:replication}
+\begin{tabular}{lllll}
+\toprule
+Link & Kind & Qwen3-4B & SmolLM3-3B & Llama-3.2-3B \\
+\midrule
+Slot value (label) at label-token V & forced & yes & yes & yes \\
+Slot key (class) at label-token K, mid layers & forced & yes & yes & yes \\
+Writers, dose spread across depth & implementation & population & population & -- \\
+Read law within regime / down-transfer & forced & 127/140, 0.07 & 7/8 & 124/125, 0.04 \\
+Read law up-transfer (18 demos) & tested & failed & -- & failed \\
+Duplicate detector feeds gate & implementation & named & yes & weak \\
+Gate lowers null logit, not match & forced (sign) & yes & yes & -- \\
+Query code & implementation & named & population & -- \\
+Readers (source) & forced (population) & population & population & population \\
+Brakes & implementation & 24 heads & suppressors & 24-head set, $+1.90$ \\
+Value transport & implementation & 3 groups & -- & -- \\
+Direct writer = late band & implementation & yes & yes & -- \\
+Order term sign flip 6 vs 12 & implementation & yes & yes (3 carriers) & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]\centering
+\fig{figures/fig10_gate_models.pdf}
+\caption{The null action in two families. (a) Llama-3.2-3B emits a label on 67\% of unique-label prompts, Qwen3-4B on 10\%: the same fallback, gated far more weakly. (b) In Qwen, pushing the gate signal $g$ at its natural dose lowers the sink logit relative to the matching slots at the three strongest readers (red) and moves matching against the other slots by much less (grey). (c) In Llama, knocking the sixteen heads a generic induction score selects moves the mid-layer readers' mass out of the sink and onto the slots: there the induction-scored heads hold the read closed.}
+\label{fig:gatemodels}
+\end{figure}
+
+\section{Related work}\label{sec:related}
+\paragraph{What in-context learning computes.} One line of work asks what function few-shot ICL implements, abstracting from the network. \citet{garg2022functions} train transformers to learn simple function classes in context, and \citet{akyurek2022linear} and \citet{vonoswald2022gd} show that, for linear regression, the computation can be read as gradient descent or ridge regression carried out by attention. These results describe the input--output map on synthetic tasks. We study a pretrained model on text, and ask which heads carry out which step; the answer we find is a lookup in a memory, with no step that resembles a gradient update.
+
+\paragraph{Label tokens and the ICL circuit.} \citet{cho2024circuit} give a three-step skeleton of an ICL inference circuit in which label tokens store task information that a later head reads. \citet{zheng2024labelwords} and \citet{hu2025addition} identify label words as the local carriers of that information. We add what the slot holds on which side of attention, who writes it and at what depth, and what switches the read on. \citet{kim2025schema} dissociate task schema from binding; our dissociation is at the level of a single label token's keys and values. \citet{jiao2026conflict} study what happens when demonstrations conflict; the brakes we describe are the population that decides which of two recent labels wins.
+
+\paragraph{Task vectors and induction heads.} \citet{hendel2023taskvectors} and \citet{todd2023fv} extract a task or function vector from a few heads' outputs at the query. Our query code is the same kind of object seen from its consumers: two heads write it, and it lives in the span of the readers' match functionals, not in any one reader's weight-space probe. \citet{olsson2022induction} established induction heads as the copying mechanism of in-context learning and the phase change in which they appear. Our duplicate-token detectors are the first half of that circuit put to a second use: they produce the repeat signal that the gate pools. The readers are induction heads whose match is on a class feature; the emergence order we observe extends the induction-head phase change by two further stages. \citet{yu2024qk} locate recency in query--key similarity to label positions; we find the same bias in the readers' rows and the population that cancels it.
+
+\paragraph{Negative heads and the attention sink.} \citet{wang2022ioi} found negative name-mover heads that write against the answer, and \citet{mcdougall2023copysuppression} describe copy suppression as a general function of such heads. Our brakes are a population with that sign and a measurable job, calibration against recency. \citet{xiao2023sinks} describe the attention sink as a position that absorbs mass; we give it a function in retrieval, as the null position whose logit the gate controls.
+
+\paragraph{Methods.} Activation patching descends from causal mediation analysis~\citep{vig2020mediation} and the locating experiments of \citet{meng2022rome}; \citet{hanna2023greaterthan} and \citet{nanda2023grokking} use it to recover full circuits for arithmetic tasks. \citet{wang2022ioi} evaluate a circuit by faithfulness, completeness and minimality; our exact accounting is a per-prompt faithfulness check, and our population results are where minimality fails for a reason we can state. \citet{quirke2026stress} stress-test attribution with same-answer controls, which we adopt throughout. \citet{chen2024skillpath} and the objection that ``circuit'' bundles sparsity, localisability and modularity~\citep{bricken2026notcircuits} frame the question our component-or-population split answers (Appendix~\ref{app:populations}).
+
+\section{Discussion}\label{sec:discussion}
+What the account covers is narrow and we want the boundary visible. It covers two-class label retrieval and function selection with short sentences and single-token labels, at up to twelve demonstrations, in three base models of three to four billion parameters. It does not cover instruction following, long-form tasks, many-class binding, or models trained with instruction tuning. Within that boundary, every link has an intervention and a control; outside it we have not looked.
+
+Two predictions did not hold, and both taught us something. The read law does not extrapolate to longer prompts. A head's null mass and its total matching mass are constants of the head, so adding matching slots divides a fixed budget among them. The law we fitted had absorbed this saturation into its constants. We also expected that fine-tuning on many-shot prompts, where recency costs accuracy, would strengthen the brakes; 400 steps of LoRA moved the readers' necessity threefold and left the brakes where they were ($+1.32$ against $+1.44$ nats). The brakes' training origin is therefore open. A third test, the knock of the seven largest direct movers, had the predicted sign and an interval that includes zero.
+
+The split between named components and populations is, we think, the most general lesson. Where the model needs little gain it concentrates: two heads compute the query's class, sixteen detect repeats, three value groups carry most of the label identity. Where it needs output gain beyond what one head's $W_{OV}$ provides, it sums, and no head is necessary. The populations are still circuits in the ordinary sense: they have a definite input direction, a definite output direction, and those directions are specific against random subspaces of the same dimension. What they lack is a single responsible head, and the arithmetic of Proposition~\ref{prop:gain} says why one cannot exist. An account of a transformer behavior should therefore say, for each step, whether the model concentrated or summed, and give the population-level object where it summed. This is also our answer to the worry that ``circuit'' presupposes sparsity: the sparsity is decided step by step by the gain the step requires.
+
+The null action deserves a last word. A model that reads a prompt memory needs a way to not read it, and the softmax provides one for free: a position that carries no prompt, which every head can fall back on. We suspect this is why attention sinks are universal, and why the gate acts on the readers' queries and nowhere else. It is the one place a prompt-level signal can reach the only lever there is.
+
+\section*{Reproducibility}
+Code, batteries, the per-prompt measurement hooks and the scripts that produce every figure and table are released at \url{https://github.com/andrewgcodes/in-context-learning-circuit}. All runs used single H100s with the HuggingFace implementations of the models in bfloat16.
+
+\bibliographystyle{iclr2024_conference}
+\bibliography{refs}
+
+\appendix
+\section{Batteries, interventions and statistics}\label{app:setup}
+\paragraph{Batteries.} Full sentence pools, label sets and seeds are in the released code. The concept battery draws three demonstrations per class from two pools of a given axis; concept12 six per class; slotgate two per class with a token-identical unique-label twin; manyclass $K$ classes from six pools (positive, negative, animals, food, Spanish, questions) with $12/K$ (or $18/K$) demonstrations per class and arbitrary single-token labels.
+\paragraph{Statistics.} All intervals are paired bootstraps over prompts (4000 resamples). Head sets selected on a battery were confirmed on a fresh draw of prompts from the same pools with a different seed. Random controls match the number of heads and their layers.
+\paragraph{Tokenization.} Targets are scored as full token sequences; the first token of a two-token label carries the key. Llama's tokenizer prepends a beginning-of-sequence token that the prompt-side comparison strips.
+\section{Table of effects}\label{app:claims}
+Every number in the main text with its model, $n$ (prompts) and paired-bootstrap interval.
+\begin{table}[H]\centering\scriptsize
+\caption{Effects behind the main text (nats; paired against the intact run; 95\% bootstrap intervals).}\label{tab:claims}
+\begin{tabular}{llrl}
+\toprule
+Claim & Model & $n$ & Effect [95\% CI] \\
+\midrule
+Label exchange: K/V at all positions, reader layers & Qwen & 144 & $-7.15$ [$-7.39,-6.90$] \\
+Label exchange: label-token K/V, all layers (= full twin) & Qwen & 144 & $-7.18$ [$-7.43,-6.94$] \\
+Label exchange: 8 readers' V / K & Qwen & 144 & $-2.16$ [$-2.41,-1.90$] / $+0.56$ [$+0.44,+0.69$] \\
+Label exchange: label-token K/V, all layers (= full twin) & Llama & 144 & $-4.92$ [$-5.31,-4.55$] \\
+Label exchange: label-token K/V, all layers (= full twin) / L21--29 & SmolLM3 & 144 & $-5.55$ [$-5.93,-5.15$] / $-2.94$ [$-3.30,-2.58$] \\
+Sentence swap: twin & Qwen & 176 & $-2.87$ [$-3.13,-2.62$] \\
+Sentence swap: label K/V L21--29 & Qwen & 176 & $-2.35$ [$-2.58,-2.12$] \\
+Sentence swap: 8 readers' K / V & Qwen & 176 & $-0.55$ [$-0.67,-0.44$] / $+0.10$ [$+0.07,+0.14$] \\
+Sentence swap: label K/V by band & Llama & 432 & $-0.02$, $-0.15$, $-0.15$, $-0.04$ (twin $-0.23$) \\
+Sentence swap: query attention by band & Llama & 432 & $-0.03$, $-0.18$, $-0.13$ \\
+Sentence swap: exact span & SmolLM3 & 432 & $-0.33$ [$-0.41,-0.25$] \\
+Same-class twin (control) & Qwen & 168 & $+0.08$ [$-0.07,+0.23$] / $+0.08$ \\
+Spread (4 layers) vs single-layer dose, natural / double & SmolLM3 & 144 & $+0.56$ [$+0.48,+0.65$] vs $+0.37$ [$+0.29,+0.46$] / $+0.69$ [$+0.58,+0.81$] vs $+0.20$ [$+0.09,+0.31$] \\
+Gate signal, recurring / unique & Qwen & 30/30 & $+18.3$ / $-20.9$ \\
+Gate signal, 16 duplicate heads off & Qwen & 30/30 & $-0.3$ / $-19.1$ (random16 $+17.5$ / $-21.3$; induction16 $+14.0$ / $-7.4$) \\
+$+g$: null $-$ match logit & Qwen & 30 & $-1.75$ [$-1.94,-1.55$] / $-3.25$ / $-3.65$; random $+0.17$ / $-0.17$ / $-0.19$ \\
+$+g$: match $-$ other logit & Qwen & 30 & $+0.47$ / $+0.34$ / $+0.48$; random $-0.04$ / $+0.05$ / $+0.03$ \\
+Query code: pair handoff & Qwen & 144 & $-0.53$ [$-0.68,-0.39$] (exact twin $-1.33$) \\
+Query code: hold attn 24--29 / 24--35 & Qwen & 144 & $-0.14$ [$-0.17,-0.10$] / $-0.04$ [$-0.06,-0.03$] \\
+Query code: hold attn+MLP / MLP 30--35 & Qwen & 144 & $-0.01$ / $-0.66$ [$-0.83,-0.50$] \\
+Readers 21--29 attention out & Qwen & 144 & $-1.10$ [$-1.39,-0.82$] \\
+Reader-20 knock, fresh draw & Qwen & 144 & $-0.74$ [$-0.95,-0.55$] / $+0.02$ \\
+Brake-24 knock, fresh draw & Qwen & 144 & $+1.39$ [$+0.88,+1.88$] / $+0.22$ \\
+Top-7 direct movers knock & Qwen & 144 & $-0.16$ [$-0.56,+0.24$] / $-0.02$, $+0.13$, $+0.05$ \\
+Brake-24 after many-shot / few-shot LoRA & Qwen & 144 & $+1.32$ [$+0.81,+1.82$] / $+1.44$ [$+0.86,+2.01$] \\
+Read law within regime & Qwen, Llama & 96 & 127/140, 124/125 heads within 0.1 \\
+Read law, one slot per class & Qwen, Llama & 96 & median error 0.07 / 0.04 \\
+Read law, 18 demonstrations & Qwen, Llama & 96 & median error 0.15 / 0.13 (failed) \\
+Exact accounting & Qwen, SmolLM3 & 144 & recon.\ error 0.045 / 0.048; 14/46 and 8/45 heads \\
+Llama single-head census & Llama & 144 & max reader $-0.09$, max brake $+0.12$, random-288 joint $+0.74$ \\
+Census-ranked brake-24 / reader-20 joint knock, 12 demos & Llama & 144 & $+1.90$ [$+1.12,+2.67$] (random $+0.12$) / $-0.56$ [$-1.01,-0.12$] (random $0.00$) \\
+Census-ranked brake-24 / reader-20 joint knock, 6 demos & Llama & 432 & $+0.57$ [$+0.19,+0.93$] (random $+0.16$) / $-0.06$ [$-0.32,+0.21$] \\
+\bottomrule
+\end{tabular}
+\end{table}
+\section{Encoder bound and assembly from parts}\label{app:encoder}
+The encoder bound is correlational: every axis that failed to bind (parity, third letter, letter set, digit rules) is one the model never represents linearly at the arrow at any layer, while language becomes linear by layer 8 and binds weakly through layers 10--20, and topic, sentiment and implied meaning become linear by layer 13 and bind through layers 21--29. Adding the gate to a non-binding prompt changes nothing. Assembly from parts: writing the task direction $u$ into the query-class slots at layer 16 and at the query of a parity prompt raises accuracy from 50\% to 71\% (question 38\%$\to$58\%, vowel 50\%$\to$71\%), with key-only, query-only and random directions within $\pm0.1$ and the wrong-class slots hurting; SmolLM3 reproduces this at a model-specific dose. The same-answer control: handoffs from a same-class same-length twin move the answer by at most 0.06 nats.
+\section{Order effects and the many-shot fine-tuning test}\label{app:order}
+The order of the demonstrations should not matter to a model that has stored them in a memory, and on average it does not: permuting the twelve demonstrations leaves the mean margin unchanged. Single prompts move, by more than a nat on half of them. The readers are the source of the movement. Their attention rows favor late slots, with a gradient of 0.5--0.85 nats of logit from the first slot to the last, so a prompt whose last matching demonstration sits near the query is read more strongly than one whose matching demonstrations come early. The brakes cancel this. With the 24 brakes knocked out the model prefers whichever label came last; at six demonstrations the brakes carry the anti-recency term outright, and at twelve they hold the model order-neutral against the readers' pull. In SmolLM3 three heads carry most of the order term and can be named.
+
+We predicted that fine-tuning on many-shot prompts, where recency costs accuracy, would strengthen the brakes. It did not. We trained two LoRA adapters on Qwen3-4B (rank 16, $\alpha = 32$, learning rate $10^{-4}$, 400 steps, adapters on every linear layer) on axes disjoint from the test battery, one on many-shot prompts and one on few-shot prompts, so that the arms differ only in demonstration count. After training, knocking the 24 brakes raises the margin by $+1.32$ \ci{+0.81}{+1.82} in the many-shot arm and $+1.44$ \ci{+0.86}{+2.01} in the few-shot arm: the same brakes, the same gain. The readers moved instead; their knock cost rose about threefold under adaptation in both arms. Whatever sets the brakes' strength, 400 steps of many-shot training is not it.
+
+\section{Emergence across OLMo-2 checkpoints}\label{app:olmo}
+\begin{figure}[t]\centering
+\fig{figures/fig11_olmo.pdf}
+\caption{The circuit assembles in order during training. Across OLMo-2 stage-1 checkpoints (grey: 1B; black: 7B), copying a repeated label is present from the earliest checkpoint; the null action, measured as withholding a label on unique-label prompts, appears in 1B between 315B and 839B tokens and is already present at 42B in 7B; class-keyed retrieval, measured as a positive margin on unique-label prompts, arrives last, by 630B tokens in 7B and never in 1B. Thirty prompts per point.}
+\label{fig:olmo}
+\end{figure}
+
+OLMo-2 releases intermediate checkpoints, which let us ask in what order the parts of the circuit appear. We ran the slotgate battery (two labels used twice against four labels used once, thirty prompts each) on six stage-1 checkpoints of OLMo-2 1B (10k, 50k, 150k, 400k, 900k and 1.9M steps; 21B to 4T tokens) and five of OLMo-2 7B (10k to 929k steps; 42B to 3.9T tokens), and read three measures at each. Copying a repeated label is present from the first checkpoint in both models: on recurring prompts the label is the argmax at every checkpoint, and knocking the sixteen duplicate-token heads removes the recurring margin from the first checkpoint on (1B at 10k steps: $+0.11$ to $-1.96$). The null action comes second. In 1B, the share of unique-label prompts that still receive a label is 0.63, 0.73 and 0.60 at the first three checkpoints and 0.13, 0.03 and 0.17 at the last three, so withholding appears between 315B and 839B tokens; in 7B it is already 0.17 at 42B tokens. Class-keyed retrieval comes last. The unique-prompt margin in 1B is negative at every checkpoint ($-3.5$ to $-0.5$) and the model never does the task; in 7B it turns positive by 630B tokens ($+0.86$, accuracy 0.67; $+0.72$ at 3.9T). The order copy, then null action, then readers is the one the dependencies require. Two observations are specific to immature checkpoints: in trained 1B and in early 7B, knocking the duplicate-token heads raises label emission on unique prompts (1B: 0.17 to 0.73), the opposite sign to Qwen; the trained 7B has Qwen's sign. We also ran Pythia-1.4B across six checkpoints; it is at chance on the task at every one and tells us nothing about the order.
+
+\section{Example prompts}\label{app:prompts}
+One verbatim prompt per battery as the Qwen tokenizer sees it (the query sentence is held out of the demonstrations; the model is scored on the next token after the final arrow).
+
+\paragraph{Twelve demonstrations, invented words (concept12)} 149 tokens; target \texttt{quil}, alternative \texttt{zorp}.
+\begin{quote}\small\ttfamily
+kludom trolom blidom -> quil\\
+tratak grodak gridak -> zorp\\
+prunom trogom plutom -> quil\\
+drobak klirak vrirak -> zorp\\
+blitom frelom klumom -> quil\\
+sturak grupak grodak -> zorp\\
+klemak tramak blirak -> zorp\\
+vromak snibak stenak -> zorp\\
+dropom snukom plapom -> quil\\
+plisom vrebom drapom -> quil\\
+frelak prirak gripak -> zorp\\
+pribom vredom vremom -> quil\\
+grinom blorom skedom ->
+\end{quote}
+\paragraph{Four demonstrations, labels repeat (slotgate, recurring member)} 45 tokens; target \texttt{foo}, alternative \texttt{bar}.
+\begin{quote}\small\ttfamily
+The omelet was folded over melted cheese -> foo\\
+a wonderful, heartfelt film -> bar\\
+an absolute joy to read -> bar\\
+The pancakes were stacked with syrup -> foo\\
+The steak rested before it was sliced ->
+\end{quote}
+\paragraph{Four demonstrations, every label once (slotgate, unique member; token-identical to the recurring member except the two late labels)} 45 tokens; target \texttt{foo}, alternative \texttt{bar}.
+\begin{quote}\small\ttfamily
+The omelet was folded over melted cheese -> foo\\
+a wonderful, heartfelt film -> bar\\
+an absolute joy to read -> vex\\
+The pancakes were stacked with syrup -> baz\\
+The steak rested before it was sliced ->
+\end{quote}
+\paragraph{Three classes, four demonstrations each (manyclass)} 121 tokens; target \texttt{foo}, alternative \texttt{vex}.
+\begin{quote}\small\ttfamily
+cold food and a long wait -> vex\\
+a wonderful, heartfelt film -> lux\\
+Which road leads to the harbor -> foo\\
+charming and genuinely funny -> lux\\
+What time does the pharmacy close -> foo\\
+Should we take the highway or the coast road -> foo\\
+buggy, slow and badly designed -> vex\\
+wooden acting and a lazy script -> vex\\
+cozy room with a great view -> lux\\
+the worst concert I have seen -> vex\\
+a warm and moving story -> lux\\
+Where did you leave the car keys -> foo\\
+How long does the bread need to rise ->
+\end{quote}
+
+
+\section{Components or populations}\label{app:populations}
+Of the links in Table~\ref{tab:replication}, the two query computers, the sixteen duplicate-token heads, the three value groups, SmolLM3's three order carriers and the four-demonstration label-prior neurons are small named sets; the writers, the 89 slot-reading readers, the roughly thirty gate-released heads and the 24 brakes are populations in which no single unit is necessary. The population links are forced by gain: a reader's class bias is 0.2--0.4 nats on a 0.5-nat per-slot spread, and no head's output writes more than 0.2 nats of answer logit, so a 1.3-nat class flip is a sum over at least seven heads and in practice over tens. Units move while the function stays (Section~\ref{sec:discussion}). The architecture-forced parts of the account, the null action and the within-regime read law, follow from the softmax and the causal mask and appear in every model we tested.
+\end{document}
