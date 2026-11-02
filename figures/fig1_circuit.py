@@ -78,11 +78,20 @@ path([(pool['x1'],yL2),(xg,yL2),(xg,yL12+1.3),(rd['x1'],yL12+1.3)],EC['pool'],ls
 path([((qh['x0']+qh['x1'])/2,qh['y1']),((qh['x0']+qh['x1'])/2,rd['y0'])],EC['q'],ls='--',name='qh->rd')
 path([(rd['x1'],yL12-0.3),(XD,yL12-0.3)],EC['rd'],name='rd->cp')
 path([(br['x1'],ybr),(xb,ybr),(xb,yL12-1.7),(XD,yL12-1.7)],EC['br'],name='br->cp')
-path([(cp['x1'],yL12-1.0),(cp['x1']+3.2,yL12-1.0)],'#222222',name='logits')
-text(cp['x1']+3.9,yL12-1.0,'logits',fontsize=8.5,ha='left',va='center')
+# logit panel: the two label logits at END (bar is the answer for this prompt; heights are schematic)
+lgx0=cp['x1']+3.4; LGW=6.8; LGH=cp['y1']-cp['y0']+2.0; lgy0=(yL12-1.0)-LGH/2
+path([(cp['x1'],yL12-1.0),(lgx0,yL12-1.0)],'#222222',name='logits')
+ax.add_patch(mp.FancyBboxPatch((lgx0,lgy0),LGW,LGH,boxstyle='round,pad=0,rounding_size=0.6',fc='#fafafa',ec='#555555',lw=1.0)); BOXES.append(dict(x0=lgx0,x1=lgx0+LGW,y0=lgy0,y1=lgy0+LGH,key='logit'))
+text(lgx0+LGW/2,lgy0+LGH-1.05,'logits',fontsize=7.2,ha='center',va='center',color='#555555')
+lgbase=lgy0+2.0; lgtop=lgy0+LGH-1.9; bw=1.5
+for k,(lab,frac,col) in enumerate([('bar',1.0,EC['cp']),('foo',0.28,'#b9cdd8')]):
+    bx=lgx0+1.35+k*(bw+1.5)
+    ax.add_patch(mp.Rectangle((bx,lgbase),bw,(lgtop-lgbase)*frac,fc=col,ec='none'))
+    text(bx+bw/2,lgy0+1.1,lab,fontsize=6.4,ha='center',va='center',family='monospace')
+ax.plot([lgx0+0.9,lgx0+LGW-0.9],[lgbase,lgbase],color='#555555',lw=0.6)
 # ---------- legend ----------
 LEG=dict(fontsize=7.4,va='center',ha='left'); items=[('-','reads keys / values of a token'),('--','acts on the readers\u2019 queries'),(':','reads the most recent label')]
-lw_=max(measure(s,**LEG)[0] for _,s in items); LW=lw_+6.4+2*1.0; LH=3*2.3+1.0; lx1=cp['x1']+3.9+measure('logits',fontsize=8.5)[0]; lx0=lx1-LW; ly1=Y[0]+1.3; ly0=ly1-LH
+lw_=max(measure(s,**LEG)[0] for _,s in items); LW=lw_+6.4+2*1.0; LH=3*2.3+1.0; lx1=lgx0+LGW; lx0=lx1-LW; ly1=Y[0]+1.3; ly0=ly1-LH
 ax.add_patch(mp.FancyBboxPatch((lx0,ly0),LW,LH,boxstyle='round,pad=0,rounding_size=0.5',fc='#fafafa',ec='#999999',lw=0.8)); BOXES.append(dict(x0=lx0,x1=lx0+LW,y0=ly0,y1=ly1,key='legend'))
 for i,(ls,s) in enumerate(items):
     yy=ly1-0.5-1.15-i*2.3; ax.plot([lx0+1.0,lx0+5.8],[yy,yy],color='#222222',lw=1.0,ls=ls); text(lx0+6.4,yy,s,**LEG)
