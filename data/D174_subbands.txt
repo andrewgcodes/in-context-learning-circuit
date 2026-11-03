@@ -1,0 +1,8 @@
+concept_rare   rest_band_20-21                    n= 72 d=-0.211 [-0.32,-0.10]
+concept_sym    rest_band_20-21                    n= 72 d=-0.108 [-0.17,-0.05]
+concept_rare   rest_band_22-23                    n= 72 d=-0.357 [-0.50,-0.22]
+concept_sym    rest_band_22-23                    n= 72 d=-0.186 [-0.27,-0.11]
+concept_rare   rest_band_24-25                    n= 72 d=-0.055 [-0.15,+0.04]
+concept_sym    rest_band_24-25                    n= 72 d=-0.050 [-0.10,+0.01]
+concept_rare   rest_band_26-27                    n= 72 d=-0.051 [-0.10,-0.01]
+concept_sym    rest_band_26-27                    n= 72 d=-0.031 [-0.07,+0.00]

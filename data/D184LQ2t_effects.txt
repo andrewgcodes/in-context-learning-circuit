@@ -1,0 +1,4 @@
+concept_rare   heads_named                        n= 72 d=-0.497 [-0.72,-0.30]
+concept_rare   heads_rand                         n= 72 d=-0.001 [-0.05,+0.05]
+concept_sym    heads_named                        n= 72 d=-0.149 [-0.24,-0.06]
+concept_sym    heads_rand                         n= 72 d=+0.005 [-0.03,+0.04]

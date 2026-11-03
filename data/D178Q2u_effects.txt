@@ -1,0 +1,10 @@
+concept_rare   none margin +1.13 n=72
+concept_sym    none margin +0.55 n=72
+concept_rare   heads_named                        n= 72 d=-0.057 [-0.10,-0.02]
+concept_rare   heads_rand                         n= 72 d=+0.007 [-0.02,+0.04]
+concept_rare   heads_randb                        n= 72 d=-0.001 [-0.03,+0.04]
+concept_rare   heads_randx                        n= 72 d=-0.002 [-0.04,+0.04]
+concept_sym    heads_named                        n= 72 d=-0.024 [-0.05,-0.00]
+concept_sym    heads_rand                         n= 72 d=+0.003 [-0.02,+0.02]
+concept_sym    heads_randb                        n= 72 d=+0.005 [-0.02,+0.03]
+concept_sym    heads_randx                        n= 72 d=+0.005 [-0.02,+0.03]

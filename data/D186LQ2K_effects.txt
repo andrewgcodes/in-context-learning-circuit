@@ -1,0 +1,100 @@
+144 prompts; conds: ['all_heads_knock', 'all_heads_knock_rs', 'both16', 'circ_knock', 'circ_knock_mlpknock', 'circ_only', 'circ_only_mlpknock', 'circ_only_mlpknock_rs', 'circ_only_rs', 'circ_rand_knock', 'circ_rand_only', 'circ_rand_only_rs', 'induction16', 'induction8', 'lookback16', 'lookback8', 'mlp_rest_knock', 'random16', 'random8', 'random8b', 'rest_band_0-13', 'rest_band_14-21', 'rest_band_22-27']
+
+== intact margin (target - alt, nats) by label set x concept
+             cvc   digrule    symset       ALL
+sym        +0.94     +0.24     +0.04     +0.41
+rare       +2.52     +0.39     +0.36     +1.09
+nat            -         -         -         -
+flip           -         -         -         -
+
+== all_heads_knock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.35 [-0.56,-0.16] acc 0.54 | cvc:-0.79 digrule:-0.30 symset:+0.04
+  rare  -0.93 [-1.28,-0.60] acc 0.54 | cvc:-2.11 digrule:-0.42 symset:-0.27
+
+== all_heads_knock_rs: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.43 [-0.73,-0.15] acc 0.43 | cvc:-0.53 digrule:-0.73 symset:-0.03
+  rare  -0.80 [-1.29,-0.31] acc 0.56 | cvc:-1.52 digrule:-0.64 symset:-0.25
+
+== both16: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.03 [-0.16,+0.07] acc 0.64 | cvc:-0.01 digrule:-0.07 symset:-0.03
+  rare  -0.26 [-0.42,-0.11] acc 0.72 | cvc:-0.64 digrule:-0.06 symset:-0.08
+
+== circ_knock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.36 [-0.56,-0.17] acc 0.54 | cvc:-0.83 digrule:-0.29 symset:+0.03
+  rare  -0.92 [-1.28,-0.58] acc 0.53 | cvc:-2.15 digrule:-0.40 symset:-0.22
+
+== circ_knock_mlpknock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.36 [-0.57,-0.16] acc 0.51 | cvc:-0.88 digrule:-0.21 symset:+0.01
+  rare  -0.90 [-1.25,-0.55] acc 0.56 | cvc:-2.06 digrule:-0.42 symset:-0.22
+
+== circ_only: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.25 [-0.07,+0.55] acc 0.67 | cvc:+1.09 digrule:-0.43 symset:+0.08
+  rare  +0.84 [+0.38,+1.28] acc 0.68 | cvc:+2.25 digrule:+0.06 symset:+0.20
+
+== circ_only_mlpknock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.02 [-0.26,+0.29] acc 0.65 | cvc:+0.47 digrule:-0.40 symset:-0.02
+  rare  +0.52 [+0.06,+1.00] acc 0.67 | cvc:+1.26 digrule:+0.12 symset:+0.19
+
+== circ_only_mlpknock_rs: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.10 [-0.44,+0.20] acc 0.61 | cvc:+0.32 digrule:-0.54 symset:-0.09
+  rare  +0.27 [-0.18,+0.75] acc 0.71 | cvc:+0.93 digrule:-0.23 symset:+0.12
+
+== circ_only_rs: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.09 [-0.25,+0.41] acc 0.58 | cvc:+0.65 digrule:-0.33 symset:-0.07
+  rare  +0.68 [+0.13,+1.22] acc 0.68 | cvc:+1.63 digrule:+0.23 symset:+0.17
+
+== circ_rand_knock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.11 [-0.22,-0.01] acc 0.62 | cvc:-0.27 digrule:-0.03 symset:-0.02
+  rare  -0.04 [-0.19,+0.09] acc 0.74 | cvc:+0.06 digrule:-0.12 symset:-0.07
+
+== circ_rand_only: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.28 [-0.48,-0.08] acc 0.54 | cvc:-0.62 digrule:-0.32 symset:+0.11
+  rare  -0.82 [-1.15,-0.52] acc 0.61 | cvc:-1.91 digrule:-0.37 symset:-0.18
+
+== circ_rand_only_rs: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.30 [-0.56,-0.04] acc 0.50 | cvc:-0.38 digrule:-0.58 symset:+0.07
+  rare  -0.77 [-1.22,-0.31] acc 0.57 | cvc:-1.58 digrule:-0.55 symset:-0.18
+
+== induction16: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.10 [-0.16,+0.34] acc 0.67 | cvc:+0.42 digrule:-0.20 symset:+0.09
+  rare  -0.37 [-0.59,-0.16] acc 0.69 | cvc:-0.85 digrule:-0.17 symset:-0.09
+
+== induction8: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.01 [-0.12,+0.09] acc 0.64 | cvc:+0.05 digrule:-0.08 symset:-0.01
+  rare  -0.25 [-0.39,-0.11] acc 0.69 | cvc:-0.60 digrule:-0.08 symset:-0.08
+
+== lookback16: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.07 [+0.01,+0.12] acc 0.65 | cvc:+0.16 digrule:+0.04 symset:+0.01
+  rare  +0.15 [+0.06,+0.24] acc 0.75 | cvc:+0.22 digrule:+0.09 symset:+0.13
+
+== lookback8: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.03 [-0.06,+0.00] acc 0.61 | cvc:-0.09 digrule:+0.04 symset:-0.04
+  rare  +0.05 [-0.01,+0.11] acc 0.74 | cvc:+0.11 digrule:+0.03 symset:+0.01
+
+== mlp_rest_knock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.18 [-0.29,-0.08] acc 0.64 | cvc:-0.43 digrule:-0.10 symset:-0.01
+  rare  -0.28 [-0.43,-0.13] acc 0.71 | cvc:-0.64 digrule:-0.02 symset:-0.18
+
+== random16: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.04 [+0.01,+0.07] acc 0.61 | cvc:+0.07 digrule:+0.04 symset:+0.01
+  rare  -0.03 [-0.08,+0.03] acc 0.75 | cvc:-0.06 digrule:+0.02 symset:-0.04
+
+== random8: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.00 [-0.03,+0.03] acc 0.60 | cvc:-0.01 digrule:+0.03 symset:-0.02
+  rare  +0.00 [-0.05,+0.05] acc 0.72 | cvc:-0.01 digrule:-0.01 symset:+0.03
+
+== random8b: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.03 [+0.01,+0.06] acc 0.61 | cvc:+0.08 digrule:+0.02 symset:+0.01
+  rare  -0.08 [-0.12,-0.04] acc 0.74 | cvc:-0.17 digrule:-0.05 symset:-0.02
+
+== rest_band_0-13: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.01 [-0.14,+0.15] acc 0.58 | cvc:+0.26 digrule:-0.28 symset:+0.04
+  rare  +0.03 [-0.19,+0.25] acc 0.75 | cvc:+0.08 digrule:-0.05 symset:+0.05
+
+== rest_band_14-21: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.17 [+0.09,+0.25] acc 0.67 | cvc:+0.47 digrule:+0.02 symset:+0.02
+  rare  +0.29 [+0.17,+0.41] acc 0.75 | cvc:+0.84 digrule:-0.00 symset:+0.03
+
+== rest_band_22-27: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.06 [+0.01,+0.11] acc 0.62 | cvc:+0.14 digrule:+0.04 symset:+0.00
+  rare  +0.15 [+0.08,+0.23] acc 0.76 | cvc:+0.38 digrule:+0.02 symset:+0.05
