@@ -531,7 +531,7 @@ The behaviour that \citet{wei2023larger} describe as appearing with scale appear
 
 Finally, the model carries a low-dimensional signal that says whether its prompt contains a mapping worth following, and we can add that signal or take it away. Whether a model trusts its context or its training is a question that comes up in retrieval-augmented generation, in prompts that try to override a model with demonstrations, and whenever a user supplies information that contradicts what the model learned. Our results suggest that, at least for labelled demonstrations, part of this decision is made by a few identifiable directions and populations, which could be measured and perhaps adjusted directly.
 
-It has not escaped our notice that the gate we have described, a signal that tells the model whether its prompt holds a memory worth reading, suggests a possible mechanism by which a language model decides between its context and its weights.
+It has not escaped our notice that the gate we have described, a signal that tells the model whether its prompt holds a memory worth reading, suggests a possible mechanism by which a language model decides whether to consult its context at all, before other heads weigh what the context says against what the model already knows.
 
 \section*{Reproducibility}
 Code, batteries, the per-prompt measurement hooks and the scripts that produce every figure and table are released at \url{https://github.com/andrewgcodes/in-context-learning-circuit}. All runs used single H100s with the HuggingFace implementations of the models in bfloat16.
