@@ -1,8 +1,12 @@
 # A Circuit for In-Context Learning
 
-Code, prompt batteries, figure scripts and paper source for *A Circuit for In-Context Learning* (Andrew Gao, William Gao; Stanford University).
+Code, prompt batteries, figure scripts, paper source and an interactive walkthrough for *A Circuit for In-Context Learning* (Andrew Gao and William Gao, equal contributors; Stanford University).
 
 The paper traces how a language model learns an arbitrary label mapping from a few demonstrations inside a single forward pass. Label-token positions act as slots: the sentence class before each label is written into the slot as a key, the label identity is the slot's value, query-side heads produce a code for the query sentence, reader heads match that code against the stored keys, a duplicate-label signal gates the readers, brake heads suppress recent-label bias, and late copier heads write the answer logits. The repository contains everything needed to run those measurements on a model and to regenerate the figures.
+
+## Interactive walkthrough
+
+`docs/index.html` is a self-contained, step-by-step 3D walkthrough of the circuit (one HTML file, no server or network needed): download it and open it in a browser, or serve the repo with GitHub Pages. It follows one prompt through Qwen3-4B's 36 layers — writer heads filling the label slots, the duplicate-label gate, the first token as the off switch, the reader heads' lookup with the fitted read law, the brakes and the copiers — with controls for repeated versus unique labels, the query class and the number of demonstrations.
 
 ## Layout
 
@@ -26,6 +30,7 @@ The paper traces how a language model learns an arbitrary label mapping from a f
 - `figures/` — one script per paper figure (Figures 19 and 21–23 are new in this version: the token observatory, natural-label closure, instruct comparison and scale census); `figstyle.py` holds the shared style, `figcheck.py` is the collision check for the hand-drawn diagrams, `data_headgrid.json` feeds Figure 17.
 - `paper/` — `main.tex`, `refs.bib`, the ICLR style files, the figure PDFs and a `Makefile` that builds the PDF and an arXiv tarball.
 - `tests/` — battery construction and twin-alignment checks that run on CPU.
+- `docs/` — the interactive walkthrough (`index.html`).
 
 ## Running
 
