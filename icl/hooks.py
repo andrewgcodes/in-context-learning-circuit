@@ -35,7 +35,7 @@ class Hooks:
         self.nh=c.num_attention_heads; self.hd=getattr(c,'head_dim',None) or c.hidden_size//self.nh; self.nkv=getattr(c,'num_key_value_heads',self.nh); self.Hs=c.hidden_size
         self.SOFT=[l for l in range(L) if kstyle(self.layers[l])]; self.GDN=[l for l in range(L) if getattr(self.layers[l],'linear_attn',None) is not None]
         self.late=late; self.kin={}; self.qn={}; self.kn={}; self.oin={}; self.GOUT={}; self.KDIRS={}; self.PATCH={}; self.PATCH_N=None; self.PATCH_POS=None; self.KNOCK_POS=None; self.KNOCK_ZERO=False; self.min={}; self.fin=None; self.REM={}; self.AOUT={}
-        self.KNOCK={}; self.GKNOCK=set(); self.MEANO={}; self.MEANG={}; self.handles=[]; self.mlpin={}; self.vin={}; self.gate={}; self.up={}
+        self.KNOCK={}; self.GKNOCK=set(); self.MEANO={}; self.MEANG={}; self.handles=[]; self.mlpin={}; self.vin={}; self.gate={}; self.up={}; self.SINKV=None; self.HGAIN={}; self.MKNOCK=set(); self.MEANM={}; self.MOUT={}; self.V0={}; self.KDIRS_POS=None   # D171: MKNOCK = MLP layers mean-ablated at KNOCK_POS (MEANM from build_means); V0 = intact value at the sink position for the 'zeroother' sink test; KDIRS_POS = positions the KDIRS removal applies to (None = all)   # D170: SINKV=(layers,pos,'zero'|'swap') value override at the sink position; HGAIN={layer:{head:gain}} output gain at KNOCK_POS
         for l in late:
             mlp=getattr(self.layers[l],'mlp',None); down=getattr(mlp,'down_proj',None) or getattr(mlp,'c_proj',None) or getattr(mlp,'dense_4h_to_h',None)
         self.NEUR={}; self.DIRS={}
@@ -84,8 +84,12 @@ class Hooks:
             def pre(mod,args,l=l):
                 x=args[0]; self.oin[l]=x[0].detach().float().clone()
                 hp=self.PATCH.get(l,{}).get('hout')
-                if l not in self.KNOCK and hp is None and not (self.PATCH.get(l,{}).get('houtu') is not None or self.PATCH.get(l,{}).get('houtp') is not None): return None
+                if l not in self.KNOCK and l not in self.HGAIN and l not in self.V0 and hp is None and not (self.PATCH.get(l,{}).get('houtu') is not None or self.PATCH.get(l,{}).get('houtp') is not None): return None
                 x=x.clone(); hdo=x.shape[-1]//nh; mu=self.MEANO.get(l)
+                v0=self.V0.pop(l,None)
+                if v0 is not None:   # position 0 attends only to itself, so its intact per-head output is exactly its own value
+                    p_=self.SINKV[1]; assert p_==0, 'zeroother is exact only at position 0'; grp=nh//(v0.shape[-1]//hdo)
+                    for h in range(nh): x[:,p_,h*hdo:(h+1)*hdo]=v0[:,(h//grp)*hdo:(h//grp+1)*hdo].to(x.dtype)
                 if hp is not None:   # per-head attention output (o_proj input slice) handed from the twin at PATCH_POS
                     s_,hs_=hp
                     for h in hs_: x[...,h*hdo:(h+1)*hdo]=self._blend(s_[:,h*hdo:(h+1)*hdo],x[...,h*hdo:(h+1)*hdo])
@@ -105,6 +109,9 @@ class Hooks:
                     rep=(mu[h*hdo:(h+1)*hdo].to(x.dtype) if (mu is not None and not self.KNOCK_ZERO) else 0)
                     if self.KNOCK_POS is None: x[...,h*hdo:(h+1)*hdo]=rep
                     else: x[:,self.KNOCK_POS,h*hdo:(h+1)*hdo]=rep   # positions only (e.g. [-1] = query)
+                for h,g_ in self.HGAIN.get(l,{}).items():   # D170 gain test: scale head h's o_proj input (its whole residual write) at KNOCK_POS (or everywhere)
+                    if self.KNOCK_POS is None: x[...,h*hdo:(h+1)*hdo]=(x[...,h*hdo:(h+1)*hdo].float()*g_).to(x.dtype)
+                    else: x[:,self.KNOCK_POS,h*hdo:(h+1)*hdo]=(x[:,self.KNOCK_POS,h*hdo:(h+1)*hdo].float()*g_).to(x.dtype)
                 return (x,)+tuple(args[1:])
             self.handles.append(proj.register_forward_pre_hook(pre))
         for l in self.GDN:
@@ -147,12 +154,22 @@ class Hooks:
                 xs,idx=ps; hd=self.hd; ys=torch.nn.functional.linear(xs.to(out.device,out.dtype)[None],mod.weight,mod.bias)   # source projection, every position
                 y=out.clone(); sl=torch.cat([torch.arange(g*hd,(g+1)*hd) for g in idx]).to(out.device)
                 return self._blend(ys[0],y,fn=lambda d,s:d.index_copy(-1,sl,s[...,sl]))
+            sv=self.SINKV
+            if sv is not None and which=='v' and l in sv[0]:   # D170 sink test: the VALUE every head reads from the sink position (0) in these layers is zeroed or replaced by position pos+1's value
+                out=out.clone(); p_,md_=sv[1],sv[2]
+                if md_ in ('zero','zeroother'):
+                    if md_=='zeroother': self.V0[l]=out[:,p_,:].clone()   # D171 clean sink: the sink position keeps its own output (restored at o_proj), only its readers see a zero value
+                    out[:,p_,:]=0
+                elif md_=='swap': out[:,p_,:]=out[:,p_+1,:].clone()
+                if self.KDIRS.get(l,{}).get(which) is None: return out
             sp=self.KDIRS.get(l,{}).get(which)
             if sp is None: return None
             u,idx=sp; x=args[0]; u=u.to(x.device,x.dtype); hd=self.hd
             c=(x@u)[...,None]; wu=(mod.weight@u)            # (x.u) and W u  -> out slice -= (x.u) * (W u)_slice
             y=out.clone()
-            for g in idx: y[...,g*hd:(g+1)*hd]=out[...,g*hd:(g+1)*hd]-c*wu[g*hd:(g+1)*hd]
+            for g in idx:
+                if self.KDIRS_POS is None: y[...,g*hd:(g+1)*hd]=out[...,g*hd:(g+1)*hd]-c*wu[g*hd:(g+1)*hd]
+                else: y[:,self.KDIRS_POS,g*hd:(g+1)*hd]=out[:,self.KDIRS_POS,g*hd:(g+1)*hd]-c[:,self.KDIRS_POS]*wu[g*hd:(g+1)*hd]
             return y
         return post
     def set_patch(self,spec):
@@ -188,9 +205,13 @@ class Hooks:
     def _mlp_pre(self,l):
         def pre(mod,args):
             self.min[l]=args[0][0].detach().clone()
-            xs=self.PATCH.get(l,{}).get('mlp')
-            if xs is None: return None
-            x=self._blend(xs,args[0].clone())
+            xs=self.PATCH.get(l,{}).get('mlp'); sp=self.KDIRS.get(l,{}).get('mlp'); x=args[0]
+            if xs is None and sp is None: return None
+            if xs is not None: x=self._blend(xs,x.clone())
+            if sp is not None:   # D171 g-route: remove a direction from this MLP's INPUT only (at KDIRS_POS, or everywhere); every other reader of the residual sees it unchanged
+                u=sp[0].to(x.device,x.dtype); x=x.clone()
+                if self.KDIRS_POS is None: x=x-(x@u)[...,None]*u
+                else: xp=x[:,self.KDIRS_POS]; x[:,self.KDIRS_POS]=xp-(xp@u)[...,None]*u
             return (x,)+tuple(args[1:])
         return pre
     def _final_pre(self,mod,args):
@@ -220,6 +241,14 @@ class Hooks:
                     y=out[0] if isinstance(out,tuple) else out; y=self._blend(xs,y.clone())
                     self.AOUT[l]=y[0].detach().clone(); out=(y,)+tuple(out[1:]) if isinstance(out,tuple) else y
                     if self.DIRS.get(l,{}).get(which) is None: return out
+            if which=='mlp':
+                y=out[0] if isinstance(out,tuple) else out; self.MOUT[l]=y[0].detach().float().clone()
+                if l in self.MKNOCK and l in self.MEANM:   # D171 circuit-only runs: this MLP's whole output at KNOCK_POS replaced by its natural-text mean
+                    y=y.clone(); mu=self.MEANM[l].to(y.device,y.dtype)
+                    if self.KNOCK_POS is None: y[...]=mu
+                    else: y[:,self.KNOCK_POS]=mu
+                    out=(y,)+tuple(out[1:]) if isinstance(out,tuple) else y
+                    if self.DIRS.get(l,{}).get(which) is None: return out
             u=self.DIRS.get(l,{}).get(which)
             if u is None: return None
             y=out[0] if isinstance(out,tuple) else out
@@ -232,15 +261,16 @@ class Hooks:
         for l,h in hl:
             if l=='g': self.GKNOCK.add(h)
             else: self.KNOCK.setdefault(l,[]).append(h)
-    def clear(self): self.DADD={}; self.KNOCK.clear(); self.GKNOCK.clear(); self.NEUR={}; self.DIRS={}; self.KDIRS={}; self.PATCH={}; self.REM={}; self.PATCH_POS=None
+    def clear(self): self.DADD={}; self.KNOCK.clear(); self.GKNOCK.clear(); self.NEUR={}; self.DIRS={}; self.KDIRS={}; self.PATCH={}; self.REM={}; self.PATCH_POS=None; self.SINKV=None; self.HGAIN={}; self.MKNOCK=set(); self.V0={}; self.KDIRS_POS=None
     def build_means(self,run,docs_ids):
         """Mean head outputs (per layer, over natural text) for mean-ablation; also GDN layer means."""
-        acc={}; n={}; gacc={}; gn={}
+        acc={}; n={}; gacc={}; gn={}; macc={}; mn={}
         for ids in docs_ids:
             run(ids)
             for l,x in self.oin.items(): acc[l]=acc.get(l,0)+x.sum(0); n[l]=n.get(l,0)+x.shape[0]
             for l,x in self.GOUT.items(): gacc[l]=gacc.get(l,0)+x.sum(0); gn[l]=gn.get(l,0)+x.shape[0]
-        self.MEANO={l:acc[l]/n[l] for l in acc}; self.MEANG={l:gacc[l]/gn[l] for l in gacc}
+            for l,x in self.MOUT.items(): macc[l]=macc.get(l,0)+x.sum(0); mn[l]=mn.get(l,0)+x.shape[0]
+        self.MEANO={l:acc[l]/n[l] for l in acc}; self.MEANG={l:gacc[l]/gn[l] for l in gacc}; self.MEANM={l:macc[l]/mn[l] for l in macc}
         assert all(torch.isfinite(v).all() for v in self.MEANO.values()), 'non-finite head means'
         return self
 

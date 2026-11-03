@@ -1,5 +1,5 @@
 """All-head reads for D139a/b (capacity law per head across K; fit on 12-demo, predict 1-slot) and D140 (gate -> sink/match logits per head).
-Usage: python3 allheads_law.py law pulled/<D139a dir> pulled/<D139b dir>   |   python3 allheads_law.py gate pulled/<D140 dir>"""
+Usage: python3 allheads_law.py law runs/<law run A> runs/<law run B>   |   python3 allheads_law.py gate runs/<gate run>"""
 import json,sys,gzip,os,collections,numpy as np
 from scipy.optimize import minimize
 def rows(d,cond=None):

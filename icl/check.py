@@ -1,9 +1,9 @@
 """Post-run invariants for a tagscope/knock output dir. Usage: python3 check.py <dir> [expected_kind,...]
 Asserts: every expected kind present; tlp<=tlp1; ntgt>=1 and decoded target non-empty/non-space for icl rows;
 equal rows per condition; every knock row has an intact ('none') twin with same seq/kind; prints decoded target per kind."""
-import json,sys,collections
+import json,sys,collections,gzip,os
 d=sys.argv[1]; exp=sys.argv[2].split(',') if len(sys.argv)>2 else []
-K=[json.loads(l) for l in open(f'{d}/knock.jsonl')]
+_f=f'{d}/knock.jsonl'; K=[json.loads(l) for l in (open(_f) if os.path.exists(_f) else gzip.open(_f+'.gz','rt'))]
 kinds=collections.Counter(r['kind'] for r in K); conds=collections.Counter(r['cond'] for r in K)
 missing=[k for k in exp if not any(kk==k or kk.startswith(k) for kk in kinds)]
 assert not missing, ('expected kinds missing from battery',missing,sorted(kinds))

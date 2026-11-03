@@ -1,0 +1,146 @@
+384 prompts; conds: ['all_heads_knock', 'all_heads_knock_rs', 'both16', 'circ_knock', 'circ_knock_mlpknock', 'circ_only', 'circ_only_mlpknock', 'circ_only_mlpknock_rs', 'circ_only_rs', 'circ_rand_knock', 'circ_rand_only', 'circ_rand_only_rs', 'induction16', 'induction8', 'lookback16', 'lookback8', 'mlp_rest_knock', 'random16', 'random8', 'random8b', 'rest_band_0-15', 'rest_band_16-27', 'rest_band_28-35']
+
+== intact margin (target - alt, nats) by label set x concept
+         implied      lang  question     topic       ALL
+sym        +2.41     +0.73     +0.46     +2.90     +1.62
+rare       +1.64     +0.75     +0.32     +3.58     +1.57
+nat        +4.52     +3.53     +4.45     +9.09     +5.40
+flip       -0.03     +0.91     -0.20     +0.73     +0.35
+
+== all_heads_knock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -1.56 [-1.88,-1.23] acc 0.38 | implied:-2.12 lang:-0.73 question:-0.48 topic:-2.91
+  rare  -1.54 [-1.92,-1.15] acc 0.51 | implied:-1.51 lang:-0.76 question:-0.33 topic:-3.55
+  nat   -5.28 [-5.89,-4.67] acc 0.52 | implied:-4.15 lang:-3.54 question:-4.41 topic:-9.03
+  flip  -0.35 [-0.54,-0.17] acc 0.38 | implied:-0.03 lang:-0.85 question:+0.20 topic:-0.72
+
+== all_heads_knock_rs: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -1.73 [-2.28,-1.20] acc 0.45 | implied:-2.69 lang:-1.11 question:-0.65 topic:-2.49
+  rare  -1.84 [-2.48,-1.24] acc 0.42 | implied:-2.15 lang:-1.39 question:-0.47 topic:-3.34
+  nat   -5.59 [-6.92,-4.34] acc 0.49 | implied:-5.07 lang:-4.60 question:-4.39 topic:-8.31
+  flip  -0.64 [-0.92,-0.36] acc 0.35 | implied:-0.26 lang:-1.35 question:-0.02 topic:-0.93
+
+== both16: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.00 [-0.10,+0.09] acc 0.77 | implied:+0.06 lang:-0.07 question:-0.02 topic:+0.02
+  rare  -0.01 [-0.12,+0.10] acc 0.76 | implied:+0.09 lang:-0.18 question:-0.26 topic:+0.31
+  nat   +0.40 [+0.14,+0.65] acc 0.94 | implied:+0.61 lang:-0.32 question:-0.16 topic:+1.46
+  flip  -0.34 [-0.44,-0.24] acc 0.46 | implied:-0.09 lang:-0.65 question:-0.35 topic:-0.28
+
+== circ_knock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -1.55 [-1.87,-1.22] acc 0.49 | implied:-2.19 lang:-0.71 question:-0.48 topic:-2.81
+  rare  -1.55 [-1.92,-1.16] acc 0.49 | implied:-1.51 lang:-0.78 question:-0.32 topic:-3.58
+  nat   -4.48 [-5.02,-3.96] acc 0.79 | implied:-3.28 lang:-2.96 question:-3.96 topic:-7.72
+  flip  -0.33 [-0.50,-0.17] acc 0.39 | implied:-0.03 lang:-0.76 question:+0.11 topic:-0.65
+
+== circ_knock_mlpknock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -1.54 [-1.87,-1.23] acc 0.47 | implied:-2.14 lang:-0.72 question:-0.46 topic:-2.85
+  rare  -1.55 [-1.95,-1.18] acc 0.46 | implied:-1.53 lang:-0.81 question:-0.32 topic:-3.56
+  nat   -5.16 [-5.74,-4.57] acc 0.55 | implied:-3.98 lang:-3.42 question:-4.40 topic:-8.84
+  flip  -0.32 [-0.49,-0.14] acc 0.44 | implied:-0.01 lang:-0.79 question:+0.21 topic:-0.71
+
+== circ_only: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +1.21 [+0.45,+1.94] acc 0.71 | implied:+0.81 lang:-0.93 question:+0.35 topic:+4.62
+  rare  +2.84 [+1.80,+3.86] acc 0.73 | implied:+2.21 lang:+0.71 question:-0.14 topic:+8.56
+  nat   +3.76 [+2.86,+4.66] acc 0.90 | implied:+0.41 lang:+0.17 question:+6.76 topic:+7.69
+  flip  -1.81 [-2.37,-1.24] acc 0.28 | implied:+0.06 lang:-2.26 question:-3.46 topic:-1.59
+
+== circ_only_mlpknock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.09 [-0.46,+0.27] acc 0.68 | implied:-0.96 lang:-1.00 question:-0.56 topic:+2.15
+  rare  +0.48 [+0.00,+0.98] acc 0.70 | implied:-0.32 lang:-0.76 question:-0.89 topic:+3.89
+  nat   -1.20 [-1.84,-0.57] acc 0.76 | implied:-2.42 lang:-2.90 question:-2.52 topic:+3.04
+  flip  -0.73 [-0.95,-0.51] acc 0.34 | implied:+0.01 lang:-1.61 question:-0.38 topic:-0.93
+
+== circ_only_mlpknock_rs: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.62 [-1.14,-0.11] acc 0.55 | implied:-2.06 lang:-0.98 question:-0.43 topic:+0.98
+  rare  -0.03 [-0.65,+0.60] acc 0.62 | implied:-1.01 lang:-0.89 question:-0.67 topic:+2.43
+  nat   -2.08 [-2.99,-1.16] acc 0.68 | implied:-3.39 lang:-3.46 question:-2.80 topic:+1.32
+  flip  -0.83 [-1.15,-0.52] acc 0.34 | implied:-0.09 lang:-1.71 question:-0.29 topic:-1.24
+
+== circ_only_rs: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.55 [-0.16,+1.26] acc 0.66 | implied:+0.06 lang:+0.07 question:+0.08 topic:+1.96
+  rare  +1.71 [+0.61,+2.82] acc 0.69 | implied:+1.25 lang:+0.99 question:+0.99 topic:+3.62
+  nat   +0.71 [-0.32,+1.75] acc 0.82 | implied:-1.67 lang:-0.30 question:+0.93 topic:+3.88
+  flip  -1.04 [-1.54,-0.52] acc 0.38 | implied:+0.10 lang:-1.72 question:-1.09 topic:-1.44
+
+== circ_rand_knock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.01 [-0.10,+0.09] acc 0.86 | implied:-0.06 lang:-0.06 question:+0.12 topic:-0.05
+  rare  +0.16 [+0.02,+0.29] acc 0.84 | implied:+0.14 lang:-0.07 question:+0.12 topic:+0.44
+  nat   -0.72 [-0.96,-0.48] acc 0.96 | implied:-1.01 lang:-1.57 question:-0.53 topic:+0.23
+  flip  +0.05 [-0.05,+0.16] acc 0.55 | implied:+0.01 lang:+0.06 question:-0.11 topic:+0.24
+
+== circ_rand_only: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -1.53 [-1.85,-1.23] acc 0.47 | implied:-2.09 lang:-0.71 question:-0.47 topic:-2.84
+  rare  -1.52 [-1.90,-1.15] acc 0.58 | implied:-1.54 lang:-0.76 question:-0.29 topic:-3.49
+  nat   -4.47 [-5.05,-3.92] acc 0.77 | implied:-3.74 lang:-2.36 question:-4.15 topic:-7.62
+  flip  -0.38 [-0.56,-0.20] acc 0.40 | implied:+0.03 lang:-1.03 question:+0.18 topic:-0.70
+
+== circ_rand_only_rs: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -1.70 [-2.23,-1.16] acc 0.47 | implied:-2.73 lang:-1.03 question:-0.56 topic:-2.47
+  rare  -1.82 [-2.44,-1.24] acc 0.43 | implied:-2.16 lang:-1.39 question:-0.50 topic:-3.23
+  nat   -5.20 [-6.40,-4.03] acc 0.50 | implied:-5.00 lang:-3.72 question:-4.45 topic:-7.65
+  flip  -0.59 [-0.84,-0.33] acc 0.39 | implied:-0.04 lang:-1.43 question:+0.01 topic:-0.88
+
+== induction16: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.01 [-0.09,+0.11] acc 0.82 | implied:-0.06 lang:+0.04 question:+0.05 topic:-0.00
+  rare  +0.02 [-0.14,+0.19] acc 0.76 | implied:+0.17 lang:-0.16 question:-0.23 topic:+0.32
+  nat   +0.09 [-0.16,+0.34] acc 0.93 | implied:+0.40 lang:-0.86 question:-0.23 topic:+1.07
+  flip  -0.55 [-0.71,-0.41] acc 0.40 | implied:-0.13 lang:-0.92 question:-0.62 topic:-0.54
+
+== induction8: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.01 [-0.07,+0.10] acc 0.79 | implied:+0.05 lang:-0.08 question:-0.02 topic:+0.09
+  rare  -0.00 [-0.11,+0.11] acc 0.77 | implied:+0.08 lang:-0.21 question:-0.28 topic:+0.41
+  nat   +0.45 [+0.19,+0.69] acc 0.93 | implied:+0.61 lang:-0.27 question:-0.05 topic:+1.48
+  flip  -0.33 [-0.43,-0.23] acc 0.45 | implied:-0.09 lang:-0.65 question:-0.36 topic:-0.22
+
+== lookback16: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.03 [-0.01,+0.08] acc 0.85 | implied:+0.06 lang:+0.04 question:+0.02 topic:+0.01
+  rare  -0.03 [-0.07,+0.01] acc 0.80 | implied:-0.07 lang:-0.02 question:+0.04 topic:-0.07
+  nat   +0.23 [+0.15,+0.32] acc 0.95 | implied:+0.09 lang:+0.25 question:+0.19 topic:+0.39
+  flip  -0.03 [-0.06,-0.00] acc 0.57 | implied:-0.03 lang:-0.03 question:-0.01 topic:-0.05
+
+== lookback8: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.02 [-0.05,+0.01] acc 0.86 | implied:+0.01 lang:-0.00 question:-0.03 topic:-0.06
+  rare  +0.01 [-0.02,+0.04] acc 0.79 | implied:-0.02 lang:+0.04 question:+0.02 topic:-0.03
+  nat   -0.06 [-0.10,-0.01] acc 0.95 | implied:-0.01 lang:-0.09 question:-0.02 topic:-0.12
+  flip  -0.02 [-0.04,+0.01] acc 0.58 | implied:-0.02 lang:-0.02 question:+0.01 topic:-0.06
+
+== mlp_rest_knock: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -1.04 [-1.26,-0.83] acc 0.70 | implied:-1.84 lang:-0.57 question:-0.33 topic:-1.44
+  rare  -0.87 [-1.10,-0.64] acc 0.73 | implied:-1.29 lang:-0.52 question:-0.14 topic:-1.53
+  nat   -3.43 [-3.81,-3.06] acc 0.85 | implied:-2.99 lang:-2.63 question:-3.20 topic:-4.89
+  flip  -0.18 [-0.32,-0.05] acc 0.55 | implied:+0.01 lang:-0.63 question:+0.20 topic:-0.30
+
+== random16: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.07 [-0.11,-0.02] acc 0.83 | implied:+0.01 lang:-0.05 question:+0.00 topic:-0.23
+  rare  -0.15 [-0.24,-0.06] acc 0.82 | implied:-0.34 lang:-0.00 question:+0.04 topic:-0.31
+  nat   -0.22 [-0.33,-0.11] acc 0.96 | implied:-0.52 lang:-0.07 question:-0.02 topic:-0.28
+  flip  -0.01 [-0.06,+0.04] acc 0.55 | implied:+0.04 lang:+0.03 question:-0.03 topic:-0.07
+
+== random8: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.02 [-0.01,+0.05] acc 0.86 | implied:+0.06 lang:-0.02 question:+0.03 topic:+0.01
+  rare  +0.01 [-0.03,+0.06] acc 0.80 | implied:+0.01 lang:+0.07 question:-0.04 topic:+0.01
+  nat   +0.05 [+0.00,+0.10] acc 0.97 | implied:+0.08 lang:+0.09 question:+0.05 topic:-0.02
+  flip  +0.01 [-0.02,+0.04] acc 0.60 | implied:-0.01 lang:+0.07 question:-0.04 topic:+0.01
+
+== random8b: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.06 [+0.04,+0.09] acc 0.85 | implied:+0.09 lang:+0.04 question:-0.03 topic:+0.15
+  rare  +0.08 [+0.04,+0.13] acc 0.81 | implied:+0.13 lang:-0.01 question:-0.02 topic:+0.24
+  nat   +0.06 [+0.01,+0.12] acc 0.97 | implied:-0.01 lang:+0.07 question:+0.13 topic:+0.06
+  flip  +0.04 [-0.01,+0.08] acc 0.58 | implied:+0.01 lang:+0.14 question:-0.02 topic:+0.01
+
+== rest_band_0-15: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   -0.14 [-0.20,-0.07] acc 0.81 | implied:-0.08 lang:-0.38 question:-0.04 topic:-0.05
+  rare  -0.11 [-0.20,-0.03] acc 0.75 | implied:-0.10 lang:-0.41 question:+0.07 topic:-0.01
+  nat   -0.43 [-0.62,-0.26] acc 0.94 | implied:-0.14 lang:-1.23 question:+0.25 topic:-0.60
+  flip  -0.12 [-0.20,-0.04] acc 0.53 | implied:-0.02 lang:-0.45 question:-0.02 topic:+0.00
+
+== rest_band_16-27: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.89 [+0.36,+1.38] acc 0.69 | implied:+0.11 lang:+0.53 question:-0.37 topic:+3.28
+  rare  +1.96 [+1.12,+2.83] acc 0.68 | implied:+0.38 lang:+1.08 question:-0.42 topic:+6.79
+  nat   +2.41 [+1.85,+2.97] acc 0.93 | implied:+0.26 lang:+2.43 question:+1.94 topic:+5.00
+  flip  -1.75 [-2.16,-1.36] acc 0.28 | implied:+0.02 lang:-2.09 question:-1.93 topic:-3.02
+
+== rest_band_28-35: d(margin) vs intact [95% CI]  (ALL column), per-concept means
+  sym   +0.77 [+0.59,+0.95] acc 0.85 | implied:+0.96 lang:+0.32 question:+0.25 topic:+1.54
+  rare  +0.98 [+0.71,+1.28] acc 0.79 | implied:+1.02 lang:+0.36 question:+0.03 topic:+2.52
+  nat   +2.05 [+1.69,+2.41] acc 0.96 | implied:+0.57 lang:+0.97 question:+2.00 topic:+4.66
+  flip  +0.21 [+0.09,+0.33] acc 0.59 | implied:-0.02 lang:+0.61 question:-0.20 topic:+0.45

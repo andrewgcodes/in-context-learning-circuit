@@ -14,7 +14,6 @@ def _battery(name):
         p=os.path.join(d,name)
         if os.path.exists(p): return p
     raise FileNotFoundError(f'{name}: put it next to this file or in ../batteries')
-
 LEARN_TASKS=lambda T:{k:v for k,v in T.items() if k.startswith(('cipher_k','mod_','novelword','sentiment')) or k in ('antonym','capital','past','upper','randmap_multi')}
 SMOKE_TASKS=['antonym','mod_add','sentiment_num','novelword_dax_blick']
 
@@ -276,7 +275,16 @@ def fam_markcorrect(tok,smoke):
             out.append(mk(tok,f'icl_markcorrect_{mname}',pairs,x1,B_,alt=A_,meta={'marker':mname}))
     return out
 CONCEPTS=json.load(open(_battery('concept_tasks.json')))   # concept -> (class-A sentences, class-B sentences)
-CONCEPT_PER=3; CONCEPT_SUF=''; CONCEPT_ONLY=None
+CONCEPT_PER=3; CONCEPT_SUF=''; CONCEPT_ONLY=None; CONCEPT_LS=None
+NATLAB={'topic':('animal','food'),'lang':('English','Spanish'),'question':('question','statement'),'implied':('good','bad')}   # D185: natural-word labels per concept (class A, class B)
+def fam_concept12n(tok,smoke):
+    """D185 transfer battery: the NATURAL-LANGUAGE concepts (topic, lang, question, implied) at 12 shots with four label sets per prompt:
+    sym (foo/bar), rare (zorp/quil), nat (the concept's own words, e.g. animal/food) and flip (the same words with their roles exchanged, Wei et al. 2023 flipped labels).
+    Same sentences/demo order/query across the four, so the label set is the only difference."""
+    global CONCEPT_PER,CONCEPT_SUF,CONCEPT_ONLY,CONCEPT_LS
+    CONCEPT_PER,CONCEPT_SUF,CONCEPT_ONLY,CONCEPT_LS=6,'_12n',{'topic','lang','question','implied'},'nat'
+    try: return fam_concept(tok,smoke)
+    finally: CONCEPT_PER,CONCEPT_SUF,CONCEPT_ONLY,CONCEPT_LS=3,'',None,None
 def fam_concept12(tok,smoke):
     """D79b: the no-world-knowledge axes (symset, cvc, digrule) at 12 shots (6 per class), same construction/twins as fam_concept."""
     global CONCEPT_PER,CONCEPT_SUF,CONCEPT_ONLY
@@ -291,6 +299,7 @@ def fam_concept(tok,smoke):
     out=[]; random.seed(13+int(os.environ.get('BATTERY_SEED','0'))); LS={'sym':('foo','bar'),'rare':('zorp','quil')}
     for cname,(A,Bs) in CONCEPTS.items():
         if CONCEPT_ONLY and cname not in CONCEPT_ONLY: continue
+        if CONCEPT_LS=='nat': LS={'sym':('foo','bar'),'rare':('zorp','quil'),'nat':NATLAB[cname],'flip':NATLAB[cname][::-1]}   # D185
         SENTPOOL['pool']=[(x,'P') for x in A]+[(x,'N') for x in Bs]
         for s_ in range(1 if smoke else 24):
             for _try in range(50):
@@ -496,7 +505,7 @@ def fam_mixed(tok,smoke):
         out+=[sq,wq,cq,so,ao]
     return out
 
-FAMILIES={'slotgatex':fam_slotgatex,'concept12':fam_concept12,'labelswap':fam_labelswap,'mixed':fam_mixed,'func':fam_func,'func2':fam_func2,'functask':fam_functask,'functask2':fam_functask2,'functask3':fam_functask3,'functask4':fam_functask4,'functask5':fam_functask5, 'functask5p': fam_functask5p,'manyclass': fam_manyclass,'slotgate': fam_slotgate,'slotmix': fam_slotmix,'manyclass_per1': lambda t,s_: fam_manyclass(t,s_,PER=1), 'manyclass_per3': lambda t,s_: fam_manyclass(t,s_,3),'manyclass_per2': lambda t,s_: fam_manyclass(t,s_,2),'markcorrect':fam_markcorrect,'std':fam_std,'redund':fam_redund,'correct':fam_correct,'bind':fam_bind,'ctl':fam_ctl,'concept':fam_concept}
+FAMILIES={'slotgatex':fam_slotgatex,'concept12':fam_concept12,'concept12n':fam_concept12n,'labelswap':fam_labelswap,'mixed':fam_mixed,'func':fam_func,'func2':fam_func2,'functask':fam_functask,'functask2':fam_functask2,'functask3':fam_functask3,'functask4':fam_functask4,'functask5':fam_functask5, 'functask5p': fam_functask5p,'manyclass': fam_manyclass,'slotgate': fam_slotgate,'slotmix': fam_slotmix,'manyclass_per1': lambda t,s_: fam_manyclass(t,s_,PER=1), 'manyclass_per3': lambda t,s_: fam_manyclass(t,s_,3),'manyclass_per2': lambda t,s_: fam_manyclass(t,s_,2),'markcorrect':fam_markcorrect,'std':fam_std,'redund':fam_redund,'correct':fam_correct,'bind':fam_bind,'ctl':fam_ctl,'concept':fam_concept}
 def build_battery(tok,families=('std','redund','correct','bind','ctl'),smoke=False):
     B=[]
     for f in families:

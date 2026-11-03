@@ -1,0 +1,15 @@
+slotgate       none margin +0.47 n=60
+
+slotgate       both16                             n= 60 d=-0.000 [-0.17,+0.17]
+slotgate       induction16                        n= 60 d=-0.194 [-0.39,+0.00]
+slotgate       induction8                         n= 60 d=-0.167 [-0.27,-0.06]
+slotgate       lookback16                         n= 60 d=+0.092 [-0.09,+0.27]
+slotgate       lookback8                          n= 60 d=+0.015 [-0.14,+0.16]
+slotgate       random16                           n= 60 d=-0.252 [-0.35,-0.17]
+slotgate       random8                            n= 60 d=-0.025 [-0.09,+0.04]
+slotgate       random8b                           n= 60 d=+0.021 [-0.04,+0.08]
+slotgate       sinkv_swap_21-29                   n= 60 d=-1.497 [-2.09,-0.89]
+slotgate       sinkv_zero_21-29                   n= 60 d=-0.181 [-0.28,-0.09]
+slotgate       sinkv_zero_all                     n= 60 d=-0.592 [-1.00,-0.24]
+slotgate       sinkv_zero_pos1_21-29              n= 60 d=+0.002 [-0.02,+0.03]
+slotgate       sinkv_zero_pos1_all                n= 60 d=+0.025 [-0.07,+0.14]

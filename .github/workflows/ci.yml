@@ -13,9 +13,9 @@ jobs:
           python-version: "3.11"
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -r requirements.txt pytest
-      - run: python -m py_compile icl/*.py figures/*.py
+      - run: python -m py_compile icl/*.py figures/*.py toy/*.py
       - run: python -m pytest -q tests
-      - run: mkdir -p /tmp/figs/figures && cd /tmp/figs && for f in $GITHUB_WORKSPACE/figures/fig*.py; do case $(basename $f) in fig3_law.py|fig4_gate.py|fig7_accounting.py|fig12_reader_rows.py) continue;; esac; python $f; done && ls /tmp/figs/figures
+      - run: mkdir -p /tmp/figs/figures && cd /tmp/figs && for f in $GITHUB_WORKSPACE/figures/fig*.py; do ICL_DATA=$GITHUB_WORKSPACE/data python $f; done && ls /tmp/figs/figures | wc -l
   paper:
     runs-on: ubuntu-latest
     steps:

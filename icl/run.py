@@ -11,15 +11,8 @@ from tasks import build_battery,build,LEARN_TASKS,SMOKE_TASKS
 from hooks import Hooks,norm_gain,kstyle,attmod,out_proj_matrix,attn_by_layer,down_matrix,qkv_pre,key_dir
 from loupes import mlp_neuron_writers,attn_logit_split,value_readout
 from score import query_attention_heads,seq_logprob,surprisal,flag_readout,query_attention,dup_head_scores,query_row_top,mlp_direct,slot_rows
-name=sys.argv[1]; tag=name.split('/')[-1]; OUT=os.environ.get('GRAIL_OUT') or next((e[4:] for e in sys.argv[3:] if e.startswith('out=')),'') or f'/vol/grails/{tag}'; os.makedirs(OUT,exist_ok=True)
-ROOT='/root/g' if os.path.isdir('/root/g') else os.path.dirname(os.path.abspath(__file__))
-def _battery(name):
-    here=os.path.dirname(os.path.abspath(__file__))
-    for d in (here, os.path.join(here,'..','batteries'), ROOT):
-        p=os.path.join(d,name)
-        if os.path.exists(p): return p
-    raise FileNotFoundError(f'{name}: put it next to this file or in ../batteries')
-
+name=sys.argv[1]; tag=name.split('/')[-1]; OUT=os.environ.get('GRAIL_OUT') or next((e[4:] for e in sys.argv[3:] if e.startswith('out=')),'') or f'runs/{tag}'; os.makedirs(OUT,exist_ok=True)
+ROOT=os.path.dirname(os.path.abspath(__file__))
 FAMS=tuple((sys.argv[2] if len(sys.argv)>2 else 'std,redund,correct,bind,ctl').split(',')); EXTRAS=set(sys.argv[3:]); SMOKE='smoke' in EXTRAS
 PAIRW_HEADS=[tuple(int(v) for v in t.split(':')) for t in next((e[6:] for e in EXTRAS if e.startswith('pairw=')),'').split(',') if t]   # pairw=22:10,23:26 -> per-row residual write of these heads at the query (loupe)
 if any(e=='perm=1' for e in EXTRAS): os.environ['CONCEPT_PERM']='1'
@@ -40,7 +33,7 @@ H=Hooks(m,late=[]); L=len(H.layers); L0=L//2; late=[l for l in H.SOFT if l>=L0];
 print('model',name,'layers',L,'soft',len(H.SOFT),'gdn',len(H.GDN),'late',late,flush=True)
 json.dump({'model':name,'L':L,'late':late,'SOFT':H.SOFT,'GDN':H.GDN,'nh':nh,'dev':dev,'dtype':str(next(m.parameters()).dtype),'bos':tok.bos_token_id,'argv':sys.argv},open(f'{OUT}/run_meta.json','w'))
 # 1) flag direction U[l]: mean key-input shift at a label position when its demo is an exact repeat of an earlier demo (paired prompts, same length)
-T_=json.load(open(_battery('icl_tasks.json'))); T_=LEARN_TASKS(T_)
+T_=json.load(open(tasks._battery('icl_tasks.json'))); T_=LEARN_TASKS(T_)
 if SMOKE: T_={k:T_[k] for k in SMOKE_TASKS}
 plen=lambda d: len(tok(d[0]+' -> '+d[1]+'\n')['input_ids']); random.seed(1); DEL={l:[] for l in late}
 for task,pairs in T_.items():
@@ -85,6 +78,10 @@ MU={l:torch.cat(ACC[l]).mean().item() for l in late}; SD={l:torch.cat(ACC[l]).st
 print('natural scale',{l:(round(MU[l],2),round(SD[l],2)) for l in late},flush=True)
 # 3) battery
 B=build_battery(tok,FAMS,SMOKE)
+_kf=next((e[6:] for e in EXTRAS if e.startswith('kinds=')),'')   # D186: kinds=nat_,flip_ keeps only battery rows whose kind contains one of the substrings (screens on a prompt subset)
+if _kf: B=[b for b in B if any(k in b.kind for k in _kf.split(','))]; print('kinds filter',_kf,'->',len(B),'rows',flush=True)
+_ke=next((e[6:] for e in EXTRAS if e.startswith('every=')),'')   # D186: every=k keeps every k-th row after the kinds filter (cheaper screens)
+if _ke: B=B[::int(_ke)]; print('every',_ke,'->',len(B),'rows',flush=True)
 # 4) per-head look-back (DS) and induction (IS) scores from attention on every battery sequence, layers below the middle readout layer
 RO=late[len(late)//2]; DSm=np.zeros((RO,nh)); ISm=np.zeros((RO,nh)); nrec=0
 with open(f'{OUT}/tagscope.jsonl','w') as ft:
@@ -291,7 +288,7 @@ def label_lo(bb,s0):
     lo=max(0,s0-1)
     if lo>0 and tok.decode([int(bb.ids[lo])]).strip()=='': lo-=1
     return lo
-GATEFN=''; JBASIS=None; RBASIS=None; PROBE_HEADS=[]   # defaults so non-twin runs do not hit NameError (bug found by the Llama smoke, 2026-11-03)
+GATEFN=''; JBASIS=None; RBASIS=None; PROBE_HEADS=[]   # defaults so non-twin runs do not hit NameError
 if TWINS:
     assert TPOS in ('query','labels','all','arrow','labtok','sent','slot1','slot2'), TPOS
     nB=len(B); B=[b for b in B if all(t in b.twins for t in TWINS)]; print('twin battery',len(B),'of',nB,'items have',TWINS,flush=True); assert B, 'no items with the requested twins'
@@ -451,19 +448,83 @@ for _da in _das:
     conds[_nm]=[('da',_nm,'other')]; conds[_nm+'_away']=[('da',_nm,'away')]; conds[_nm+'_rand']=[('da',_nm,'rand')]; conds[_nm+'_same']=[('da',_nm,'same')]; conds[_nm+'_qflip']=[('da',_nm,'qflip')]; conds[_nm+'_qrand']=[('da',_nm,'qrand')]
     for _m in ('sameq','otherq','qonly','sameqrand','qonlyrand'): conds[_nm+'_'+_m]=[('da',_nm,_m)]   # D70 built-from-parts: key written into same-class slots AND the query pushed toward that class (sameq); wrong-class slots + query (otherq); query only (qonly); random same-norm (…rand)   # qflip: push the QUERY's final position toward the other class; qrand: random same-norm vector there
 if DADDS: print('direction add',list(DADDS),flush=True)
+RKCOND=next((e[7:] for e in EXTRAS if e.startswith('rkcond=')),'')   # rkcond=lookback16 -> the 'rk' (push+knock) conditions knock that stored condition's heads instead of heads=
 _ras=[e[5:] for e in EXTRAS if e.startswith('radd=')]   # radd=<npz>:<layer>:<scale> (D42, functask): add scale*gap[L]*ruledir[L] (anto-minus-copy, unit) pushed toward the OTHER rule (copy items +, anto items -) at the query arrow (_q) or at every demo arrow (_arrows); _qrand/_arrowsrand = same-norm random vector
 RADDS={}
 for _ra in _ras:
     _p,_l,_s=_ra.rsplit(':',2); _nm=f'radd{_l}x{_s}'; _z=np.load(_p); RADDS[_nm]=(torch.tensor(_z[f'l{_l}']).float()*float(_z[f'gap{_l}']),int(_l),float(_s))
     for _m in ('q','qrand','arrows','arrowsrand'): conds[_nm+'_'+_m]=[('ra',_nm,_m)]
-    if HEADS and 'raknock' in EXTRAS: conds[_nm+'_q+knock']=[('rk',_nm,'q')]; conds[_nm+'_qrand+knock']=[('rk',_nm,'qrand')]   # D144: gate push WITH the named heads mean-ablated (does +g still open emission without the released witnesses?)
+    if (HEADS or RKCOND) and 'raknock' in EXTRAS: conds[_nm+'_q+knock']=[('rk',_nm,'q')]; conds[_nm+'_qrand+knock']=[('rk',_nm,'qrand')]
+    if RKCOND:   # D170 rescue-and-block: knock the rkcond heads (duplicate-token heads) and push +g at the query (qplus = forced + sign); block = also remove g from the named readers' QUERY inputs (qplusblock) or a random direction (qplusblockrand)
+        for _m in ('qplus','qplusblock','qplusblockrand'): conds[_nm+'_'+_m+'+knock']=[('rk',_nm,_m)]
+        for _b in [b_ for b_ in next((e[7:] for e in EXTRAS if e.startswith('gblock=')),'').split(',') if b_]:   # D171 g-route sweep: gblock=23-26,27-30 -> remove g at the QUERY only from ALL heads' queries / all MLP inputs / both in that band (dup heads knocked, +g pushed)
+            for _w in ('all','mlp','both'): conds[f'{_nm}_qplusblock{_w}{_b}+knock']=[('rk',_nm,f'qplusblock{_w}{_b}')]
+        conds[_nm+'_qplus']=[('ra',_nm,'qplus')]; conds[_nm+'_qplusblock']=[('ra',_nm,'qplusblock')]   # D144: gate push WITH the named heads mean-ablated (does +g still open emission without the released witnesses?)
 if RADDS: print('rule-direction add',list(RADDS),flush=True)
+TRACE_N=int(next((e[6:] for e in EXTRAS if e.startswith('trace=')),'0'))   # trace=<n>: write per-token/per-layer/per-head shards for the first n prompts (intact + circuit-only)
 GPROJ=next((e[6:] for e in EXTRAS if e.startswith('gproj=')),'')   # gproj=<npz>:20,23 -> record the query-arrow residual's projection on the gate direction g at those layers under EVERY condition (D145: does the look-back knock lower g?)
 GP={}
 if GPROJ:
     _p,_ls=GPROJ.rsplit(':',1); _z=np.load(_p)
     for _l in _ls.split(','): GP[int(_l)]=torch.tensor(_z[f'l{_l}']).float()
     print('gate projection layers',sorted(GP),flush=True)
+GV=(GP[23] if 23 in GP else (next(iter(GP.values())) if GP else None))   # gate direction used by the trace shards
+if GV is not None: GV=GV/GV.norm()
+SINKV=next((e[6:] for e in EXTRAS if e.startswith('sinkv=')),'')   # D170 sink test: sinkv=21-29 -> zero / swap(with position 1) the VALUE at position 0 in those layers; controls: zero at position 1, zero at 0 in all layers
+if SINKV:
+    _a,_,_z=SINKV.partition('-'); _ls=list(range(int(_a),int(_z or _a)+1))
+    conds[f'sinkv_zero_{SINKV}']=[('sv',_ls,0,'zero')]; conds[f'sinkv_swap_{SINKV}']=[('sv',_ls,0,'swap')]; conds[f'sinkv_zero_pos1_{SINKV}']=[('sv',_ls,1,'zero')]
+    conds['sinkv_zero_all']=[('sv',list(range(len(H.layers))),0,'zero')]; conds['sinkv_zero_pos1_all']=[('sv',list(range(len(H.layers))),1,'zero')]
+    conds[f'sinkv_zeroother_{SINKV}']=[('sv',_ls,0,'zeroother')]; conds['sinkv_zeroother_all']=[('sv',list(range(len(H.layers))),0,'zeroother')]   # D171: zero the value other positions read from position 0, position 0's own output restored
+HGAIN=next((e[6:] for e in EXTRAS if e.startswith('hgain=')),'')   # D170 gain test: hgain=24.21,29.11,22.20:2,4,8 -> scale those heads' writes at the query by each gain; hgainrest=<heads> are knocked in the *_restknock variants
+if HGAIN:
+    _hh,_gg=HGAIN.rsplit(':',1); _gh=[tuple(int(v) for v in t.split('.')) for t in _hh.split(',')]; _gs=[float(g) for g in _gg.split(',')]
+    _rest=[tuple(int(v) for v in t.split('.')) for t in next((e[10:] for e in EXTRAS if e.startswith('hgainrest=')),'').split(',') if t]
+    _rg=random.Random(23); _rnd=[(l_,_rg.randrange(nh)) for l_,_ in _gh]
+    conds['hgain_restknock']=[('hg',_gh,1.0,_rest)]; conds['hgain_setknock']=[('hg',_gh,0.0,[])]
+    for g_ in _gs:
+        conds[f'hgain_x{g_:g}']=[('hg',_gh,g_,[])]; conds[f'hgain_x{g_:g}_restknock']=[('hg',_gh,g_,_rest)]; conds[f'hgain_x{g_:g}_rand']=[('hg',_rnd,g_,[])]
+    print('gain heads',_gh,'rest',len(_rest),flush=True)
+CIRC=next((e[5:] for e in EXTRAS if e.startswith('circ=')),'')   # D171 circuit-only: circ=<l:h,...> the named circuit; every OTHER head is mean-ablated at the knock position (circ_only), or the named set is (circ_knock); random same-layer set controls; circmlp=30-35 = MLP layers kept when the rest of the MLPs are also ablated
+if CIRC:
+    _ch=[(int(a),int(b)) for a,b in (x.split(':') for x in CIRC.split(','))]
+    if 'circdup' in EXTRAS: _ch=list(dict.fromkeys(_ch+[tuple(map(int,p)) for p in conds['lookback16']+conds['induction16']]))   # D180: add this run's own duplicate-token heads (lookback16 + induction16) to the named set
+    _cs=set(_ch)
+    for l_,h_ in _ch: assert l_ in H.SOFT and 0<=h_<nh, ('bad circ head',l_,h_)
+    _allp=[(l_,h_) for l_ in range(len(H.layers)) for h_ in range(nh) if l_ in H.SOFT]; _rest=[p for p in _allp if p not in _cs]
+    _rc=random.Random(29); _rnd=list({(l_,_rc.randrange(nh)) for l_,_ in _ch}); _rs=set(_rnd); _rrest=[p for p in _allp if p not in _rs]
+    _cm=next((e[8:] for e in EXTRAS if e.startswith('circmlp=')),''); _a,_,_z=_cm.partition('-'); _keepm=set(range(int(_a),int(_z or _a)+1)) if _cm else set(); _mrest=[l_ for l_ in range(len(H.layers)) if l_ not in _keepm]
+    conds['circ_only']=[('cm',_rest,[])]; conds['circ_knock']=[('cm',_ch,[])]; conds['circ_rand_only']=[('cm',_rrest,[])]; conds['circ_rand_knock']=[('cm',_rnd,[])]
+    conds['all_heads_knock']=[('cm',_allp,[])]; conds['circ_only_mlpknock']=[('cm',_rest,_mrest)]; conds['mlp_rest_knock']=[('cm',[],_mrest)]; conds['circ_knock_mlpknock']=[('cm',_ch,_mrest)]
+    print('circuit heads',len(_ch),'rest',len(_rest),'random',len(_rnd),'mlp rest',len(_mrest),flush=True)
+    _cb=next((e[10:] for e in EXTRAS if e.startswith('circbands=')),'')   # D173: graded complement, e.g. circbands=0-9,10-19,20-27,28-35 -> mean-ablate only the UNNAMED heads inside each layer band
+    for _bd in ([x for x in _cb.split(',') if x] if _cb else []):
+        _a,_,_z=_bd.partition('-'); _a,_z=int(_a),int(_z or _a); conds[f'rest_band_{_a}-{_z}']=[('cm',[p for p in _rest if _a<=p[0]<=_z],[])]
+    _sc=next((e[11:] for e in EXTRAS if e.startswith('circscreen=')),'')   # D174: per-head screen: every UNNAMED head in layers a-b mean-ablated alone at the query (battery means) -> which unnamed heads carry the rest
+    if _sc:
+        _a,_,_z=_sc.partition('-'); _a,_z=int(_a),int(_z or _a)
+        for p in _rest:
+            if _a<=p[0]<=_z: conds[f'scr_{p[0]}:{p[1]}']=[('cm',[p],[])]
+        for p in _ch:
+            if _a<=p[0]<=_z: conds[f'scrn_{p[0]}:{p[1]}']=[('cm',[p],[])]   # named heads screened the same way, for a matched comparison
+    if 'circrs' in EXTRAS:   # D173: resample ablation = replace the ablated heads' outputs by the SAME position's outputs from another battery prompt (never off-distribution)
+        for _nm in ('circ_only','circ_rand_only','all_heads_knock','circ_only_mlpknock'): conds[_nm+'_rs']=conds[_nm]+[('rs',)]
+QOUT=None
+if CIRC and ('circmean=battery' in EXTRAS or 'circmean=kind' in EXTRAS or 'circrs' in EXTRAS):   # D173: reference = per-head / per-MLP output at the QUERY position averaged over the battery itself (IOI-style matched distribution), not natural text
+    H.clear(); QOUT=[]
+    for b_ in B:
+        run(b_.ids); _p=len(b_.ids)-1
+        QOUT.append({'o':{l:H.oin[l][_p].clone() for l in H.oin},'m':{l:H.MOUT[l][_p].clone() for l in H.MOUT}})
+    MEANO_NAT,MEANM_NAT=H.MEANO,H.MEANM
+    MEANO_BAT={l:torch.stack([q['o'][l] for q in QOUT]).mean(0) for l in QOUT[0]['o']}; MEANM_BAT={l:torch.stack([q['m'][l] for q in QOUT]).mean(0) for l in QOUT[0]['m']}
+    KIND_OF=[b_.kind for b_ in B]   # D186: per-kind references = prompts sharing the same label pair AND label set (sym/rare/nat/flip), so the reference carries the right label words and mapping
+    MEANO_KIND={k:{l:torch.stack([q['o'][l] for q,kk in zip(QOUT,KIND_OF) if kk==k]).mean(0) for l in QOUT[0]['o']} for k in set(KIND_OF)}
+    MEANM_KIND={k:{l:torch.stack([q['m'][l] for q,kk in zip(QOUT,KIND_OF) if kk==k]).mean(0) for l in QOUT[0]['m']} for k in set(KIND_OF)}
+    RS_NEXT=[next(j for j in list(range(i+1,len(B)))+list(range(0,i)) if KIND_OF[j]==KIND_OF[i]) if 'circmean=kind' in EXTRAS else (i+1)%len(B) for i in range(len(B))]   # rs partner: next prompt of the same kind (circmean=kind) else next prompt (D173 behaviour: for interleaved label sets that is the SAME prompt under another label set)
+    assert all(RS_NEXT[i]!=i for i in range(len(B))), 'a kind with a single prompt cannot be resampled'
+    print('circmean=kind: %d kinds, %d-%d prompts each'%(len(set(KIND_OF)),min(KIND_OF.count(k) for k in set(KIND_OF)),max(KIND_OF.count(k) for k in set(KIND_OF))),flush=True)
+    if 'circmean=battery' in EXTRAS: H.MEANO,H.MEANM=MEANO_BAT,MEANM_BAT
+    print('battery means over',len(QOUT),'prompts; head-mean shift vs natural (L24 norm ratio)',round(float((MEANO_BAT[24]-MEANO_NAT[24]).norm()/MEANO_NAT[24].norm()),3) if 24 in MEANO_BAT and 24 in MEANO_NAT else None,flush=True)
 NMIS=0
 with open(f'{OUT}/knock.jsonl','w') as fk:
     for sid,b in enumerate(B):
@@ -511,10 +572,26 @@ with open(f'{OUT}/knock.jsonl','w') as fk:
                     else: H.DADD={DADD[1]:(_v,torch.tensor(_same if _mode=='same' else _oth),_sgn*DADD[2])}
             elif hl and hl[0][0] in ('ra','rk'):
                 H.clear(); RA=RADDS[hl[0][1]]; _mode=hl[0][2]; _v=RA[0]; _sgn=1.0 if b.kind.endswith(('copy','_one')) else -1.0   # push toward the OTHER rule: copy->rule, one-slot->two-slot (gate)
-                if 'rand' in _mode: _g=torch.Generator().manual_seed(3000+sid); _v=torch.randn(_v.shape,generator=_g); _v=_v/_v.norm()*RA[0].norm()
+                if 'rand' in _mode and 'block' not in _mode: _g=torch.Generator().manual_seed(3000+sid); _v=torch.randn(_v.shape,generator=_g); _v=_v/_v.norm()*RA[0].norm()   # blockrand keeps the real +g and randomises only the REMOVED direction (D170B bug: it randomised both)
                 _ps=[len(idl)-1] if _mode.startswith('q') else sorted({p for (s0,s1,_) in b.spans for p in range(label_lo(b,s0),s0)})
+                if _mode.startswith('qplus'): _sgn=1.0
                 H.DADD={RA[1]:(_v,torch.tensor(_ps),_sgn*RA[2])}
-                if hl[0][0]=='rk': H.set_knock(hs)
+                if 'block' in _mode:   # remove the gate direction (or a random one of the same norm) from the named readers' query inputs: if +g rescues through the readers' queries, this must undo it
+                    _gd=RA[0].float(); _gd=_gd/_gd.norm()
+                    if _mode.endswith('rand'): _g=torch.Generator().manual_seed(5000+sid); _gd=torch.randn(_gd.shape,generator=_g); _gd=_gd/_gd.norm()
+                    _kd={}; _bw=next((w_ for w_ in ('all','mlp','both') if _mode.startswith('qplusblock'+w_)),None); _pairs=hs; H.KDIRS_POS=None
+                    if _bw is not None:
+                        _a,_,_z=_mode[len('qplusblock'+_bw):].partition('-'); _Ls=list(range(int(_a),int(_z or _a)+1)); H.KDIRS_POS=[len(idl)-1]
+                        _pairs=[(l_,h_) for l_ in _Ls for h_ in range(nh)] if _bw in ('all','both') else []
+                        if _bw in ('mlp','both'):
+                            for l_ in _Ls:
+                                _n=getattr(H.layers[l_],'post_attention_layernorm',None); _w=_n.weight.detach().float().cpu() if _n is not None else torch.ones_like(_gd)
+                                _kd.setdefault(l_,{})['mlp']=(F.normalize(_gd*_w,dim=0),None)
+                    for l_,h_ in _pairs:
+                        _n=getattr(H.layers[l_],'input_layernorm',None); _w=_n.weight.detach().float().cpu() if _n is not None else torch.ones_like(_gd)
+                        _u=F.normalize(_gd*_w,dim=0); _kd.setdefault(l_,{}).setdefault('q',(_u,[]))[1].append(h_)
+                    H.set_kdirs(_kd)
+                if hl[0][0]=='rk': H.set_knock(conds[RKCOND] if RKCOND else hs)
             elif hl and hl[0][0]=='tp':
                 assert hl[0][1] in SRCT, 'twin patch before its twin source'; H.clear()
                 _tp,*_holds=hl[0][2].split('^'); _spec=twin_spec(build_twin_patch(_tp,SRCT[hl[0][1]],T),SRCT[hl[0][1]])
@@ -525,7 +602,18 @@ with open(f'{OUT}/knock.jsonl','w') as fk:
                         else: _spec.setdefault(_l,{}).update(_d)
                 H.set_patch(_spec)
                 _p=_tp.partition('@')[2] or None; H.PATCH_POS=None if len(hl[0])>3 else twin_positions(b,T,_p); H.PATCH_N=T+shared_prefix(b,b.twins[hl[0][1]])
-            else: H.set_knock(hl)
+            elif hl and hl[0][0]=='sv': H.clear(); H.SINKV=(set(hl[0][1]),hl[0][2],hl[0][3])
+            elif hl and hl[0][0]=='cm': H.clear(); H.set_knock(hl[0][1]); H.MKNOCK=set(hl[0][2])   # D171 circuit-only: heads + whole MLP layers mean-ablated at KNOCK_POS
+            if hl and hl[0][0]=='cm' and QOUT is not None:   # D173: resample ('rs') conditions take their reference from another battery prompt; others from the battery mean (or natural mean)
+                if len(hl)>1 and hl[1][0]=='rs': _q=QOUT[RS_NEXT[sid]]; H.MEANO,H.MEANM=_q['o'],_q['m']
+                elif 'circmean=kind' in EXTRAS: H.MEANO,H.MEANM=MEANO_KIND[b.kind],MEANM_KIND[b.kind]
+                elif 'circmean=battery' in EXTRAS: H.MEANO,H.MEANM=MEANO_BAT,MEANM_BAT
+                else: H.MEANO,H.MEANM=MEANO_NAT,MEANM_NAT
+            elif hl and hl[0][0]=='hg':
+                H.clear(); H.HGAIN={}
+                for l_,h_ in hl[0][1]: H.HGAIN.setdefault(l_,{})[h_]=hl[0][2]
+                H.set_knock(hl[0][3])
+            elif not (hl and isinstance(hl[0][0],str) and hl[0][0]!='g'): H.set_knock(hl)   # plain head-knock conds only; typed conds ('tp','t','ra',...) were set above. The D173 'if cm and QOUT' line broke the elif chain so typed conds fell through here (crashed D188SG*/GD*)
             tgt=None; ids_in=ids
             if icl: tgt_,fb=target_ids(tok,idl,b.target); tgt=torch.tensor(tgt_); NMIS+=int(fb); ids_in=torch.cat([ids,tgt])
             if (RDUMP or HDUMP) and cname=='none' and b.spans: H.RESPOS=torch.tensor(sorted({p for (s0,s1,_) in b.spans for p in range(label_lo(b,s0),s1)})+[len(idl)-1]); H.RES={}   # last row = the query's final position (its arrow)
@@ -553,8 +641,16 @@ with open(f'{OUT}/knock.jsonl','w') as fk:
             TG=flag_readout(H.kin,U,MU,SD,T); QA={}; QAH={}; AROW={}; SROW={}; TLP=TLP1=ALT=None; GEOM={}; NEURQ={}; PAIRW={}; DLA={}; DLAJ=0; MDLA={}; FRMS=None; LDIFF=None; DLAE=None; DLAREC=None; DLAFIN=None; hasalt_=False; NEUR={}; LSPLIT={}; VREAD={}
             if icl:
                 AB=attn_by_layer(o,H.SOFT,L); AT={l:AB[l] for l in late}
+                if TRACE_N and sid<TRACE_N and (cname=='none' or cname.startswith('circ_only')):   # D179 token observatory: every token through every layer and head, to a durable shard
+                    import numpy as _np; os.makedirs(f'{OUT}/trace',exist_ok=True)
+                    _hs=torch.stack([h[0].float() for h in o.hidden_states]).cpu()                      # [L+1,T,d] residual after each layer (0 = embeddings)
+                    _att=_np.stack([AB[l].float().cpu().numpy() for l in sorted(AB)]).astype(_np.float16)   # [L,nh,T,T]
+                    _wn=_np.stack([H.oin[l].float().view(H.oin[l].shape[0],nh,-1).norm(dim=-1).cpu().numpy() for l in sorted(H.oin)]).astype(_np.float16)   # [L,T,nh] per-head write norm (o_proj input) at every position
+                    _pu=_np.stack([(_hs[l+1]@U[l].float().cpu()).numpy() for l in late])                 # [late,T] projection on the repeat-flag direction U_l
+                    _pg=_np.stack([(_hs[l+1]@GV.float().cpu()).numpy() for l in range(L)]) if GV is not None else None   # [L,T] projection on the gate direction g
+                    _np.savez_compressed(f'{OUT}/trace/{sid:03d}_{cname}.npz',hs=_hs.half().numpy(),att=_att,wnorm=_wn,proj_u=_pu,proj_g=_pg if _pg is not None else _np.zeros(0),late=_np.array(late),toks=_np.array(idl),tokstr=_np.array([tok.decode([t]) for t in idl]),spans=_np.array([(a,b_) for a,b_,*_ in b.spans]),kind=b.kind,target=str(b.target),cond=cname,T=T)
                 if b.spans: QA=query_attention(AT,T,b.spans,tol=ATT_TOL); QAH=query_attention_heads(AT,T,b.spans,set(dup))
-                if AROWH: AROW=query_row_top(AT,T,AROWH,idl,tok,k=AROWK)
+                if AROWH: AROW=query_row_top(AB,T,AROWH,idl,tok,k=AROWK)   # AB = every layer (AT only has the late ones; early heads' rows were empty before D178b)
                 if SROWL and b.spans: SROW=slot_rows(AB,b.spans,idl,tok,SROWL)
                 TLP,TLP1=seq_logprob(lp,T,tgt); TLP,TLP1=round(TLP,4),round(TLP1,4)
                 alt_t=[]
